@@ -25,8 +25,33 @@ mod buckets {
         assert_eq!(names, vec!["my-bucket"]);
     }
 
+    /// Re-creating a bucket you already own succeeds in `us-east-1` and fails with
+    /// `BucketAlreadyOwnedByYou` everywhere else. That is a documented quirk of the
+    /// original region rather than an inconsistency, and `us-east-1` is the region
+    /// mock-s3 reports, so setup code that creates a bucket unconditionally has to work.
     #[tokio::test]
-    async fn should_report_bucket_already_owned_by_you_on_a_repeat_create() {
+    async fn should_succeed_on_a_repeat_create_in_us_east_1() {
+        let h = conformance::harness().await;
+        assert_eq!(h.server.region(), "us-east-1");
+
+        h.s3.create_bucket()
+            .bucket("my-bucket")
+            .send()
+            .await
+            .unwrap();
+
+        let again = h.s3.create_bucket().bucket("my-bucket").send().await;
+
+        assert!(
+            again.is_ok(),
+            "us-east-1 answers a repeat create with 200: {again:?}"
+        );
+    }
+
+    /// A subresource mock-s3 does not implement must be refused, not quietly treated as
+    /// the operation the bare path would mean — a bucket listing, or worse.
+    #[tokio::test]
+    async fn should_refuse_a_bucket_subresource_it_does_not_implement() {
         let h = conformance::harness().await;
         h.s3.create_bucket()
             .bucket("my-bucket")
@@ -34,15 +59,30 @@ mod buckets {
             .await
             .unwrap();
 
-        let error =
-            h.s3.create_bucket()
+        let status =
+            h.s3.get_bucket_policy_status()
                 .bucket("my-bucket")
                 .send()
                 .await
                 .unwrap_err()
                 .into_service_error();
+        assert_eq!(status.meta().code(), Some("NotImplemented"));
 
-        assert_eq!(error.code(), Some("BucketAlreadyOwnedByYou"));
+        let inventory =
+            h.s3.list_bucket_inventory_configurations()
+                .bucket("my-bucket")
+                .send()
+                .await
+                .unwrap_err()
+                .into_service_error();
+        assert_eq!(inventory.meta().code(), Some("NotImplemented"));
+
+        // Still there: neither request was treated as an operation on the bucket itself.
+        h.s3.head_bucket()
+            .bucket("my-bucket")
+            .send()
+            .await
+            .expect("the bucket must survive a request for a subresource");
     }
 
     #[tokio::test]
@@ -114,6 +154,187 @@ mod objects {
             .await
             .unwrap();
         h
+    }
+
+    /// The worst of the fall-through cases: `PUT /{bucket}/{key}?retention` reaching
+    /// `PutObject` stored the retention document *as the object*, answered `200`, and
+    /// destroyed what was there. Silent data loss on a request that should be refused.
+    #[tokio::test]
+    async fn should_refuse_to_set_retention_rather_than_overwrite_the_object() {
+        use aws_sdk_s3::types::{ObjectLockRetention, ObjectLockRetentionMode};
+
+        let h = harness_with_bucket().await;
+        h.s3.put_object()
+            .bucket("my-bucket")
+            .key("notes.txt")
+            .body(ByteStream::from_static(b"the real object"))
+            .send()
+            .await
+            .unwrap();
+
+        let error = h
+            .s3
+            .put_object_retention()
+            .bucket("my-bucket")
+            .key("notes.txt")
+            .retention(
+                ObjectLockRetention::builder()
+                    .mode(ObjectLockRetentionMode::Governance)
+                    .retain_until_date(aws_sdk_s3::primitives::DateTime::from_secs(4_000_000_000))
+                    .build(),
+            )
+            .send()
+            .await
+            .unwrap_err()
+            .into_service_error();
+        assert_eq!(error.meta().code(), Some("NotImplemented"));
+
+        let got =
+            h.s3.get_object()
+                .bucket("my-bucket")
+                .key("notes.txt")
+                .send()
+                .await
+                .unwrap();
+        let body = got.body.collect().await.unwrap().into_bytes();
+        assert_eq!(
+            body.as_ref(),
+            b"the real object",
+            "the object must not have been replaced by the retention document"
+        );
+    }
+
+    /// Copying a key onto itself changes nothing unless the metadata is being replaced,
+    /// and S3 refuses it rather than rewriting the object. Allowing it hides a client
+    /// bug — usually a sync that computed the wrong destination.
+    #[tokio::test]
+    async fn should_refuse_a_copy_of_an_object_onto_itself() {
+        let h = harness_with_bucket().await;
+        h.s3.put_object()
+            .bucket("my-bucket")
+            .key("notes.txt")
+            .body(ByteStream::from_static(b"one"))
+            .send()
+            .await
+            .unwrap();
+
+        let error =
+            h.s3.copy_object()
+                .bucket("my-bucket")
+                .key("notes.txt")
+                .copy_source("my-bucket/notes.txt")
+                .send()
+                .await
+                .unwrap_err()
+                .into_service_error();
+
+        assert_eq!(error.meta().code(), Some("InvalidRequest"));
+    }
+
+    /// The same copy is legal when it replaces the metadata, which is how a client
+    /// changes an object's content type in place.
+    #[tokio::test]
+    async fn should_allow_a_copy_onto_itself_that_replaces_the_metadata() {
+        let h = harness_with_bucket().await;
+        h.s3.put_object()
+            .bucket("my-bucket")
+            .key("notes.txt")
+            .body(ByteStream::from_static(b"one"))
+            .send()
+            .await
+            .unwrap();
+
+        h.s3.copy_object()
+            .bucket("my-bucket")
+            .key("notes.txt")
+            .copy_source("my-bucket/notes.txt")
+            .metadata_directive(aws_sdk_s3::types::MetadataDirective::Replace)
+            .content_type("text/plain")
+            .send()
+            .await
+            .unwrap();
+
+        let got =
+            h.s3.get_object()
+                .bucket("my-bucket")
+                .key("notes.txt")
+                .send()
+                .await
+                .unwrap();
+        assert_eq!(got.content_type(), Some("text/plain"));
+    }
+
+    /// The `response-*` parameters override the stored headers for one response, which is
+    /// how a presigned link serves an object under a different filename. Ignoring them
+    /// answers with the stored values, which looks correct and defeats the link.
+    #[tokio::test]
+    async fn should_apply_the_response_header_overrides() {
+        let h = harness_with_bucket().await;
+        h.s3.put_object()
+            .bucket("my-bucket")
+            .key("notes.txt")
+            .content_type("text/plain")
+            .body(ByteStream::from_static(b"one"))
+            .send()
+            .await
+            .unwrap();
+
+        let got =
+            h.s3.get_object()
+                .bucket("my-bucket")
+                .key("notes.txt")
+                .response_content_type("foo/bar")
+                .response_content_disposition("attachment; filename=\"other.txt\"")
+                .response_cache_control("no-cache")
+                .response_content_language("esperanto")
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(got.content_type(), Some("foo/bar"));
+        assert_eq!(
+            got.content_disposition(),
+            Some("attachment; filename=\"other.txt\"")
+        );
+        assert_eq!(got.cache_control(), Some("no-cache"));
+        assert_eq!(got.content_language(), Some("esperanto"));
+    }
+
+    /// `GetObjectAttributes` reaching `GetObject` answered with the object's bytes, which
+    /// a client cannot parse and cannot distinguish from a server fault.
+    #[tokio::test]
+    async fn should_refuse_an_object_subresource_it_does_not_implement() {
+        use aws_sdk_s3::types::ObjectAttributes;
+
+        let h = harness_with_bucket().await;
+        h.s3.put_object()
+            .bucket("my-bucket")
+            .key("notes.txt")
+            .body(ByteStream::from_static(b"hello"))
+            .send()
+            .await
+            .unwrap();
+
+        let attributes =
+            h.s3.get_object_attributes()
+                .bucket("my-bucket")
+                .key("notes.txt")
+                .object_attributes(ObjectAttributes::Etag)
+                .send()
+                .await
+                .unwrap_err()
+                .into_service_error();
+        assert_eq!(attributes.meta().code(), Some("NotImplemented"));
+
+        let legal_hold =
+            h.s3.get_object_legal_hold()
+                .bucket("my-bucket")
+                .key("notes.txt")
+                .send()
+                .await
+                .unwrap_err()
+                .into_service_error();
+        assert_eq!(legal_hold.meta().code(), Some("NotImplemented"));
     }
 
     #[tokio::test]
@@ -288,6 +509,52 @@ mod listing {
                 .unwrap();
         }
         h
+    }
+
+    /// `max-keys=0` is a request for nothing. S3 answers it with an empty page that is
+    /// not truncated, so a client has no token to follow and nothing to follow it to.
+    #[tokio::test]
+    async fn should_report_max_keys_of_zero_as_an_untruncated_empty_page() {
+        let h = harness_with_keys(&["bar", "baz", "foo", "quxx"]).await;
+
+        for truncated in [
+            h.s3.list_objects_v2()
+                .bucket("my-bucket")
+                .max_keys(0)
+                .send()
+                .await
+                .unwrap()
+                .is_truncated(),
+            h.s3.list_objects()
+                .bucket("my-bucket")
+                .max_keys(0)
+                .send()
+                .await
+                .unwrap()
+                .is_truncated(),
+        ] {
+            assert_eq!(truncated, Some(false));
+        }
+    }
+
+    /// An empty continuation token is not an invalid one: it names no position, so the
+    /// listing starts from the beginning — and S3 echoes the parameter it was given, so
+    /// a client that sent one can read it back.
+    #[tokio::test]
+    async fn should_accept_and_echo_an_empty_continuation_token() {
+        let h = harness_with_keys(&["bar", "baz", "foo", "quxx"]).await;
+
+        let listed =
+            h.s3.list_objects_v2()
+                .bucket("my-bucket")
+                .continuation_token("")
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(listed.continuation_token(), Some(""));
+        assert_eq!(listed.is_truncated(), Some(false));
+        assert_eq!(listed.contents().len(), 4);
     }
 
     #[tokio::test]

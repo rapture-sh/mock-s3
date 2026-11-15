@@ -54,6 +54,14 @@ pub async fn put(
         return copy_object(&engine, &bucket, &key, source, &headers).await;
     }
 
+    // Anything else that names a subresource is refused here. Falling through would make
+    // `PUT /{bucket}/{key}?retention` store the retention document *as the object*.
+    ops::refuse_unhandled(
+        &query,
+        ops::OBJECT_SUBRESOURCES,
+        &["acl", "tagging", "uploadId"],
+    )?;
+
     // A streaming-signed upload arrives wrapped in chunk framing. Without this the frame
     // headers would be stored as part of the object.
     let body = crate::chunked::decode(body, &headers)?;
@@ -116,6 +124,14 @@ pub async fn get(
         return Ok(response::xml(StatusCode::OK, xml::object_tagging()));
     }
 
+    // Refused rather than answered with the object's bytes, which is what a caller of
+    // `GetObjectAttributes` or `SelectObjectContent` would otherwise get.
+    ops::refuse_unhandled(
+        &query,
+        ops::OBJECT_SUBRESOURCES,
+        &["acl", "tagging", "uploadId"],
+    )?;
+
     let object = engine
         .get_object_version(&bucket, &key, query.non_empty("versionId"))
         .await?;
@@ -124,6 +140,7 @@ pub async fn get(
         Precondition::Failed => return Err(precondition_failed()),
         Precondition::NotModified => {
             let mut out = object_headers(&object.meta, Checksums::Omit);
+            apply_response_overrides(&mut out, &query);
             out.remove(header::CONTENT_TYPE);
             return Ok(response::empty(StatusCode::NOT_MODIFIED, out));
         }
@@ -139,6 +156,7 @@ pub async fn get(
     match range {
         None => {
             let mut out = object_headers(&object.meta, Checksums::Include);
+            apply_response_overrides(&mut out, &query);
             response::set(&mut out, header::CONTENT_LENGTH, &size.to_string());
             Ok((StatusCode::OK, out, object.body).into_response())
         }
@@ -158,6 +176,7 @@ pub async fn get(
             // against a partial body rejects the response, so S3 leaves it off a range
             // and so do we.
             let mut out = object_headers(&object.meta, Checksums::Omit);
+            apply_response_overrides(&mut out, &query);
             response::set(&mut out, header::CONTENT_LENGTH, &slice.len().to_string());
             response::set(
                 &mut out,
@@ -178,6 +197,8 @@ pub async fn head(
 ) -> Result<Response, S3Error> {
     let query = Query::parse(raw.as_deref());
 
+    ops::refuse_unhandled(&query, ops::OBJECT_SUBRESOURCES, &[])?;
+
     let meta = engine
         .head_object_version(&bucket, &key, query.non_empty("versionId"))
         .await?;
@@ -194,6 +215,7 @@ pub async fn head(
     }
 
     let mut out = object_headers(&meta, Checksums::Include);
+    apply_response_overrides(&mut out, &query);
     response::set(&mut out, header::CONTENT_LENGTH, &meta.size.to_string());
     Ok(response::empty(StatusCode::OK, out))
 }
@@ -213,6 +235,8 @@ pub async fn delete(
         engine.head_object(&bucket, &key).await?;
         return Ok(response::empty(StatusCode::NO_CONTENT, HeaderMap::new()));
     }
+
+    ops::refuse_unhandled(&query, ops::OBJECT_SUBRESOURCES, &["tagging", "uploadId"])?;
 
     let outcome = engine
         .delete_object_version(&bucket, &key, query.non_empty("versionId"))
@@ -327,6 +351,20 @@ async fn copy_object(
         .get("x-amz-metadata-directive")
         .and_then(|value| value.to_str().ok())
         .is_some_and(|value| value.eq_ignore_ascii_case("REPLACE"));
+
+    // Copying a key onto itself only means something if the metadata is being replaced —
+    // otherwise it is a request to change nothing, and S3 refuses it rather than
+    // rewriting the object. Allowing it hides a client bug, usually a sync that has
+    // computed the wrong destination.
+    if source_bucket == bucket && source_key == key && source_version.is_none() && !replacing {
+        return Err(S3Error::new(
+            StatusCode::BAD_REQUEST,
+            "InvalidRequest",
+            "This copy request is illegal because it is trying to copy an object to \
+             itself without changing the object's metadata, storage class, website \
+             redirect location or encryption attributes.",
+        ));
+    }
 
     let options = if replacing {
         mock_s3_core::PutOptions {
@@ -501,6 +539,29 @@ fn object_headers(meta: &ObjectMeta, checksums: Checksums) -> HeaderMap {
         response::set_user_metadata(&mut headers, name, value);
     }
     headers
+}
+
+/// Apply the `response-*` query parameters, which override the headers the object was
+/// stored with for this one response.
+///
+/// This is how a presigned URL serves an object under a different name or content type —
+/// the stored object is untouched. Ignoring them answers with the stored values, which
+/// looks right and silently defeats a download link's filename.
+fn apply_response_overrides(headers: &mut HeaderMap, query: &Query) {
+    const OVERRIDES: &[(&str, http::HeaderName)] = &[
+        ("response-content-type", header::CONTENT_TYPE),
+        ("response-content-language", header::CONTENT_LANGUAGE),
+        ("response-content-encoding", header::CONTENT_ENCODING),
+        ("response-cache-control", header::CACHE_CONTROL),
+        ("response-expires", header::EXPIRES),
+        ("response-content-disposition", header::CONTENT_DISPOSITION),
+    ];
+
+    for (parameter, name) in OVERRIDES {
+        if let Some(value) = query.non_empty(parameter) {
+            response::set(headers, name.clone(), value);
+        }
+    }
 }
 
 /// Parse a single HTTP byte range against a known object size.

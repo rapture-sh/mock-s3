@@ -135,15 +135,21 @@ pub fn validate_bucket_name(name: &str) -> Result<()> {
     {
         return invalid("may only contain lowercase letters, digits, hyphens and dots");
     }
-    let first = name.as_bytes()[0];
-    let last = name.as_bytes()[name.len() - 1];
-    if !(first.is_ascii_lowercase() || first.is_ascii_digit())
-        || !(last.is_ascii_lowercase() || last.is_ascii_digit())
-    {
-        return invalid("must start and end with a letter or digit");
-    }
-    if name.contains("..") {
-        return invalid("may not contain two adjacent dots");
+    // Every dot-separated label, not just the name as a whole: S3 rejects `foo-.bar` and
+    // `foo.-bar` even though the first and last characters of each are fine. This also
+    // covers two adjacent dots, a leading dot and a trailing dot, all of which make an
+    // empty label.
+    let alphanumeric = |byte: u8| byte.is_ascii_lowercase() || byte.is_ascii_digit();
+    for label in name.split('.') {
+        match (label.bytes().next(), label.bytes().next_back()) {
+            (Some(first), Some(last)) if alphanumeric(first) && alphanumeric(last) => {}
+            (None, _) | (_, None) => {
+                return invalid("may not contain an empty label");
+            }
+            _ => {
+                return invalid("every label must start and end with a letter or digit");
+            }
+        }
     }
     if name
         .split('.')
@@ -206,6 +212,26 @@ mod tests {
         #[test]
         fn should_reject_a_name_ending_in_a_hyphen() {
             assert!(validate_bucket_name("my-bucket-").is_err());
+        }
+
+        /// Each label has to stand on its own: both of these have a valid first and last
+        /// character overall, and S3 rejects them anyway.
+        #[test]
+        fn should_reject_a_label_that_starts_or_ends_with_a_hyphen() {
+            assert!(validate_bucket_name("foo-.bar").is_err());
+            assert!(validate_bucket_name("foo.-bar").is_err());
+        }
+
+        #[test]
+        fn should_reject_an_empty_label() {
+            assert!(validate_bucket_name("foo..bar").is_err());
+            assert!(validate_bucket_name(".foobar").is_err());
+            assert!(validate_bucket_name("foobar.").is_err());
+        }
+
+        #[test]
+        fn should_accept_a_dotted_name_whose_labels_are_all_valid() {
+            assert!(validate_bucket_name("my.test.bucket").is_ok());
         }
 
         #[test]

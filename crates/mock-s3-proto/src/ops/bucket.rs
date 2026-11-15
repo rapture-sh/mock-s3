@@ -46,7 +46,21 @@ pub async fn create(
         return Ok(response::empty(StatusCode::OK, HeaderMap::new()));
     }
 
-    engine.create_bucket(&bucket).await?;
+    // Every subresource this handler covers returned early above, so reaching here with
+    // one named means it is not implemented — and treating it as CreateBucket instead
+    // would answer a request for something else with a success.
+    crate::ops::refuse_unhandled(&query, crate::ops::BUCKET_SUBRESOURCES, &[])?;
+
+    match engine.create_bucket(&bucket).await {
+        Ok(()) => {}
+        // us-east-1 is the exception, and it is the region mock-s3 reports by default:
+        // re-creating a bucket you already own succeeds there, while every other region
+        // answers `BucketAlreadyOwnedByYou`. A client written against us-east-1 treats
+        // the conflict as fatal, so getting this wrong breaks setup code that creates a
+        // bucket unconditionally.
+        Err(mock_s3_core::Error::BucketAlreadyOwnedByYou(_)) if engine.region() == "us-east-1" => {}
+        Err(other) => return Err(other.into()),
+    }
 
     let mut headers = HeaderMap::new();
     response::set(&mut headers, header::LOCATION, &format!("/{bucket}"));
@@ -84,6 +98,10 @@ pub async fn delete(
         tracing::debug!(bucket, subresource = name, "bucket configuration cleared");
         return Ok(response::empty(StatusCode::NO_CONTENT, HeaderMap::new()));
     }
+
+    // As above, and the stakes here are the highest in the file: falling through means
+    // deleting the bucket on a request that asked for something else entirely.
+    crate::ops::refuse_unhandled(&query, crate::ops::BUCKET_SUBRESOURCES, &[])?;
 
     engine.delete_bucket(&bucket).await?;
 
@@ -289,13 +307,28 @@ pub async fn get(
         return list_versions(&engine, &bucket, &query, max_keys).await;
     }
 
+    // `subresource` answered everything it recognises, so a subresource still named here
+    // is one mock-s3 does not implement. Falling through would answer `?analytics` and
+    // the rest with an ordinary bucket listing, which parses cleanly and means nothing.
+    crate::ops::refuse_unhandled(&query, crate::ops::BUCKET_SUBRESOURCES, &["versions"])?;
+
     // Echoed back as the client sent it, while the engine gets the cursor inside it.
-    let sent_token = query.non_empty("continuation-token");
+    //
+    // `continuation-token=` with no value is echoed as an empty element rather than
+    // omitted: S3 reports the parameter it was given, and a client that sent one expects
+    // to read it back. Only a non-empty token becomes a cursor, so an empty one still
+    // starts from the beginning.
+    let sent_token = if query.has("continuation-token") {
+        Some(query.get("continuation-token").unwrap_or_default())
+    } else {
+        None
+    };
     let cursor = match (v2, sent_token) {
+        // An empty token is not an invalid one; it just names no position.
+        (true, Some("")) | (false, _) | (_, None) => None,
         (true, Some(raw)) => Some(crate::token::decode(raw).ok_or_else(|| {
             S3Error::invalid_argument(format!("continuation-token is not valid: {raw}"))
         })?),
-        _ => None,
     };
 
     let request = ListRequest {

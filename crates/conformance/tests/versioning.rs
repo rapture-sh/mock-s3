@@ -796,6 +796,34 @@ mod head_object_on_a_deleted_key {
         );
     }
 
+    /// The header has to be on *both* answers to be worth anything: a client comparing
+    /// `true` against a missing header cannot tell "deleted" from "never existed", so S3
+    /// sends `false` for a key that is simply not there.
+    #[tokio::test]
+    async fn should_report_no_delete_marker_for_a_key_that_was_never_versioned() {
+        let h = conformance::harness().await;
+        h.s3.create_bucket().bucket(BUCKET).send().await.unwrap();
+        put(&h, "notes.txt", "one").await;
+        h.s3.delete_object()
+            .bucket(BUCKET)
+            .key("notes.txt")
+            .send()
+            .await
+            .unwrap();
+
+        let error =
+            h.s3.head_object()
+                .bucket(BUCKET)
+                .key("notes.txt")
+                .send()
+                .await
+                .unwrap_err();
+
+        let response = error.raw_response().expect("the error carries a response");
+        assert_eq!(response.status().as_u16(), 404);
+        assert_eq!(response.headers().get("x-amz-delete-marker"), Some("false"));
+    }
+
     #[tokio::test]
     async fn should_refuse_a_head_of_a_delete_marker_named_by_its_id() {
         let h = versioned().await;

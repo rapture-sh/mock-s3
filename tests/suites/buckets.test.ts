@@ -34,12 +34,13 @@ describe("CreateBucket", () => {
     expect(listed.Buckets?.map((entry) => entry.Name)).toContain(bucket);
   });
 
-  it("should report BucketAlreadyOwnedByYou when the bucket already exists", async () => {
+  // Re-creating a bucket you already own succeeds in us-east-1 and fails with
+  // BucketAlreadyOwnedByYou everywhere else. us-east-1 is the region mock-s3 reports, so
+  // setup code that creates a bucket unconditionally has to work.
+  it("should succeed when the bucket already exists, as us-east-1 does", async () => {
     const bucket = await createBucket();
 
-    const code = await errorCode(() => s3.send(new CreateBucketCommand({ Bucket: bucket })));
-
-    expect(code).toBe("BucketAlreadyOwnedByYou");
+    await expect(s3.send(new CreateBucketCommand({ Bucket: bucket }))).resolves.toBeDefined();
   });
 
   it("should reject a name that real S3 would reject", async () => {

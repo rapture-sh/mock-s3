@@ -116,18 +116,28 @@ pub fn evaluate(
         .filter(|header| !header.is_empty())
         .collect();
 
-    let rule = rules.iter().find(|rule| {
-        rule.allowed_origins
+    let (rule, matched) = rules.iter().find_map(|rule| {
+        let matched = rule
+            .allowed_origins
             .iter()
-            .any(|pattern| origin_matches(pattern, origin))
-            && rule.allowed_methods.contains(&method)
-            && wanted.iter().all(|header| header_allowed(rule, header))
+            .find(|pattern| origin_matches(pattern, origin))?;
+
+        let usable = rule.allowed_methods.contains(&method)
+            && wanted.iter().all(|header| header_allowed(rule, header));
+        usable.then_some((rule, matched))
     })?;
 
     Some(Allowance {
-        // Echoing the concrete origin rather than `*` keeps the response usable for a
-        // request that carries credentials.
-        origin: origin.to_string(),
+        // A rule of `*` is echoed as `*`, and any other pattern is echoed as the concrete
+        // origin it matched. Echoing the origin for `*` as well would look more useful —
+        // it is what a request carrying credentials needs — but S3 returns the wildcard,
+        // and a browser that caches `*` behaves differently from one that caches an
+        // origin. Matching S3 is the whole point.
+        origin: if matched == "*" {
+            "*".to_string()
+        } else {
+            origin.to_string()
+        },
         methods: rule.allowed_methods.join(", "),
         headers: (!wanted.is_empty()).then(|| wanted.join(", ")),
         expose_headers: (!rule.expose_headers.is_empty()).then(|| rule.expose_headers.join(", ")),
@@ -247,6 +257,28 @@ mod tests {
             let rules = vec![rule(&["https://example.com"], &["GET"], &[])];
 
             assert!(evaluate(&rules, "https://evil.com", "GET", "").is_none());
+        }
+
+        /// A rule of `*` is echoed as `*`, not as the origin that matched it. Echoing
+        /// the origin would be more useful to a credentialed request, and S3 does not do
+        /// it — a browser caches the two differently.
+        #[test]
+        fn should_echo_the_wildcard_rather_than_the_origin_for_a_wildcard_rule() {
+            let rules = vec![rule(&["*"], &["GET"], &[])];
+
+            let allowed = evaluate(&rules, "https://example.com", "GET", "").unwrap();
+
+            assert_eq!(allowed.origin, "*");
+        }
+
+        /// Any other pattern, wildcards included, is echoed as the concrete origin.
+        #[test]
+        fn should_echo_the_concrete_origin_for_a_partial_wildcard() {
+            let rules = vec![rule(&["https://*.example.com"], &["GET"], &[])];
+
+            let allowed = evaluate(&rules, "https://app.example.com", "GET", "").unwrap();
+
+            assert_eq!(allowed.origin, "https://app.example.com");
         }
 
         #[test]

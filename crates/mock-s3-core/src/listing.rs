@@ -105,9 +105,10 @@ pub fn list(all: Vec<ObjectMeta>, request: &ListRequest) -> ListResult {
         entries.retain(|entry| entry.sort_key() > after);
     }
 
-    let is_truncated = entries.len() > max_keys;
-    // `max-keys=0` is legal and returns an empty, truncated page, so this has to cope
-    // with there being no last entry to build a token from.
+    // `max-keys=0` is a legal request for nothing, and S3 answers it with an empty page
+    // that is *not* truncated — there is no token, because there is nothing to continue.
+    // Reporting it as truncated with no token leaves a paginating client with no move.
+    let is_truncated = max_keys > 0 && entries.len() > max_keys;
     let next_continuation_token = if is_truncated {
         max_keys
             .checked_sub(1)
@@ -252,7 +253,8 @@ pub fn list_versions(all: Vec<ObjectVersion>, request: &VersionListRequest) -> V
 
     entries.drain(..start);
 
-    let is_truncated = entries.len() > max_keys;
+    // As with objects: `max-keys=0` is an empty page, not a truncated one.
+    let is_truncated = max_keys > 0 && entries.len() > max_keys;
     entries.truncate(max_keys);
 
     let (next_key_marker, next_version_id_marker) = match entries.last() {
@@ -398,6 +400,23 @@ mod tests {
             assert_eq!(result.objects.len(), 1);
             assert_eq!(result.objects[0].key, "photos");
             assert_eq!(result.common_prefixes, vec!["photos/"]);
+        }
+
+        /// `max-keys=0` asks for nothing, and S3 answers with an empty page that is not
+        /// truncated. Reporting it as truncated leaves a paginating client with no token
+        /// to continue from and nowhere to go.
+        #[test]
+        fn should_report_an_empty_page_for_max_keys_of_zero_as_untruncated() {
+            let request = ListRequest {
+                max_keys: 0,
+                ..Default::default()
+            };
+
+            let result = list(keys(&["a", "b", "c"]), &request);
+
+            assert!(result.objects.is_empty());
+            assert!(!result.is_truncated);
+            assert_eq!(result.next_continuation_token, None);
         }
 
         #[test]
@@ -586,6 +605,20 @@ mod tests {
                     ("b".to_string(), "v1".to_string()),
                 ]
             );
+        }
+
+        #[test]
+        fn should_report_an_empty_page_for_max_keys_of_zero_as_untruncated() {
+            let request = VersionListRequest {
+                max_keys: 0,
+                ..Default::default()
+            };
+
+            let result = list_versions(versions(&[("a", "v1")]), &request);
+
+            assert!(result.versions.is_empty());
+            assert!(!result.is_truncated);
+            assert_eq!(result.next_key_marker, None);
         }
 
         #[test]

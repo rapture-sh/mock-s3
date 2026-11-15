@@ -96,12 +96,18 @@ impl From<CoreError> for S3Error {
             )
             .with_resource(bucket),
 
+            // `x-amz-delete-marker: false` looks redundant on a key that is simply not
+            // there, but S3 sends it and clients read it: the header is how you tell
+            // "deleted, and the earlier versions are still here" from "never existed",
+            // so it has to be present in *both* answers to be worth anything. A client
+            // that finds it missing has to guess.
             CoreError::NoSuchKey(key) => S3Error::new(
                 StatusCode::NOT_FOUND,
                 "NoSuchKey",
                 "The specified key does not exist.",
             )
-            .with_resource(key),
+            .with_resource(key)
+            .with_header(DELETE_MARKER, "false"),
 
             CoreError::NoSuchVersion { key, version_id } => S3Error::new(
                 StatusCode::NOT_FOUND,

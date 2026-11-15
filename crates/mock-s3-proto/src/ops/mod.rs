@@ -94,9 +94,20 @@ pub(crate) fn user_metadata(headers: &HeaderMap) -> BTreeMap<String, String> {
             if name.is_empty() {
                 return None;
             }
-            Some((name.to_string(), value.to_str().ok()?.to_string()))
+            Some((name.to_string(), latin1_to_string(value.as_bytes())))
         })
         .collect()
+}
+
+/// Decode a header value the way HTTP defines it: as bytes, one per character.
+///
+/// A user metadata value may legally contain a byte above `0x7F` — `x-amz-meta-x: café`
+/// is a real thing clients send — and S3 hands back exactly what it was given. Treating
+/// the value as UTF-8 and dropping it when that fails loses the metadata silently.
+/// Latin-1 maps every byte to one `char`, so [`crate::response::set_user_metadata`] can
+/// turn it back into the same bytes.
+fn latin1_to_string(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| *byte as char).collect()
 }
 
 /// Headers S3 stores with an object and returns on the way out.
@@ -146,6 +157,12 @@ pub(crate) fn system_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
             .map(str::trim)
             .filter(|part| !part.is_empty() && !part.eq_ignore_ascii_case("aws-chunked"))
             .collect();
+
+        // Removed first, then put back only if something survived. `aws-chunked` is
+        // framing this server has already undone, so it must not be reported as part of
+        // the object's encoding — and when it was the *only* encoding, the loop above
+        // has already stored the raw value, so dropping the key is the whole fix.
+        kept.remove("content-encoding");
         if !remaining.is_empty() {
             kept.insert("content-encoding".to_string(), remaining.join(", "));
         }
@@ -162,6 +179,88 @@ pub(crate) fn content_type(headers: &HeaderMap) -> String {
         .filter(|value| !value.is_empty())
         .unwrap_or(DEFAULT_CONTENT_TYPE)
         .to_string()
+}
+
+/// Every query parameter S3 treats as naming an operation on a bucket, rather than as
+/// modifying one.
+///
+/// The list is the whole set S3 defines, implemented or not, which is what makes
+/// [`refuse_unhandled`] safe: adding a name here makes every handler refuse it until one
+/// of them declares it handled.
+pub(crate) const BUCKET_SUBRESOURCES: &[&str] = &[
+    "accelerate",
+    "acl",
+    "analytics",
+    "cors",
+    "delete",
+    "encryption",
+    "intelligent-tiering",
+    "inventory",
+    "lifecycle",
+    "location",
+    "logging",
+    "metadataTable",
+    "metrics",
+    "notification",
+    "object-lock",
+    "ownershipControls",
+    "policy",
+    "policyStatus",
+    "publicAccessBlock",
+    "replication",
+    "requestPayment",
+    "tagging",
+    "uploads",
+    "versioning",
+    "versions",
+    "website",
+];
+
+/// The same, for an operation on an object.
+///
+/// `versionId` and `partNumber` are deliberately absent: they modify an operation rather
+/// than naming one, so a request carrying either still means the operation its method and
+/// path say.
+pub(crate) const OBJECT_SUBRESOURCES: &[&str] = &[
+    "acl",
+    "attributes",
+    "legal-hold",
+    "restore",
+    "retention",
+    "select",
+    "tagging",
+    "torrent",
+    "uploadId",
+    "uploads",
+];
+
+/// Refuse a request that names a subresource this handler does not implement.
+///
+/// Without this a handler falls through to whatever its method and path mean on their
+/// own, which is a *different operation* than the caller asked for, and it looks like
+/// success:
+///
+/// - `PUT /{bucket}/{key}?retention` became `PutObject` and overwrote the object with the
+///   retention document.
+/// - `GET /{bucket}/{key}?attributes` returned the object's bytes where the caller
+///   expected a `GetObjectAttributes` document.
+/// - `GET /{bucket}?analytics` answered with a bucket listing.
+///
+/// `handled` is what the calling handler deals with itself, so this is called last, once
+/// those branches have been taken.
+pub(crate) fn refuse_unhandled(
+    query: &crate::query::Query,
+    defined: &[&str],
+    handled: &[&str],
+) -> Result<(), crate::S3Error> {
+    let unhandled = defined
+        .iter()
+        .find(|name| query.has(name) && !handled.contains(*name));
+
+    match unhandled {
+        Some(name) => Err(crate::S3Error::not_implemented(&format!("?{name}"))),
+        None => Ok(()),
+    }
 }
 
 #[cfg(test)]
@@ -191,6 +290,71 @@ mod tests {
             headers.insert("x-amz-meta-", "nothing".parse().unwrap());
 
             assert!(user_metadata(&headers).is_empty());
+        }
+    }
+
+    mod system_headers {
+        use super::*;
+
+        fn encoding(value: &str) -> Option<String> {
+            let mut headers = HeaderMap::new();
+            headers.insert("content-encoding", value.parse().unwrap());
+
+            super::super::system_headers(&headers)
+                .get("content-encoding")
+                .cloned()
+        }
+
+        #[test]
+        fn should_keep_a_content_encoding_that_is_not_framing() {
+            assert_eq!(encoding("gzip").as_deref(), Some("gzip"));
+            assert_eq!(encoding("deflate, gzip").as_deref(), Some("deflate, gzip"));
+        }
+
+        /// `aws-chunked` is framing this server has already undone, so it is not part of
+        /// the object's encoding and must not be reported as if it were.
+        #[test]
+        fn should_strip_aws_chunked_from_a_content_encoding() {
+            assert_eq!(encoding("gzip, aws-chunked").as_deref(), Some("gzip"));
+            assert_eq!(encoding("aws-chunked, gzip").as_deref(), Some("gzip"));
+        }
+
+        /// The case that was wrong: with nothing left after stripping, the header has to
+        /// go entirely rather than keep the raw value.
+        #[test]
+        fn should_drop_the_header_when_only_framing_was_sent() {
+            assert_eq!(encoding("aws-chunked"), None);
+            assert_eq!(encoding("aws-chunked, aws-chunked"), None);
+        }
+    }
+
+    mod user_metadata_bytes {
+        use super::*;
+
+        /// A metadata value may hold a byte above 0x7F, and S3 hands back what it was
+        /// given. Treating the value as UTF-8 dropped it silently.
+        #[test]
+        fn should_round_trip_a_value_that_is_not_ascii() {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                "x-amz-meta-meta1",
+                http::HeaderValue::from_bytes(b"Hello World\xe9").unwrap(),
+            );
+
+            let stored = user_metadata(&headers);
+            assert_eq!(
+                stored.get("meta1").map(String::as_str),
+                Some("Hello Worldé")
+            );
+
+            let mut out = HeaderMap::new();
+            crate::response::set_user_metadata(&mut out, "meta1", &stored["meta1"]);
+
+            assert_eq!(
+                out.get("x-amz-meta-meta1").map(|value| value.as_bytes()),
+                Some(&b"Hello World\xe9"[..]),
+                "the bytes that went in have to be the bytes that come out"
+            );
         }
     }
 
