@@ -115,6 +115,21 @@ deliberately has no account model, lifecycle or policy enforcement, so every tes
 covering those is expected to fail. Moving one line out of that file is a better
 contribution than most features.
 
+Every line in it sits under the reason it is expected to fail, and `--update` puts the
+groups back from the patterns at the top of `run.sh` rather than discarding them. Two
+things follow:
+
+- A failure that matches no pattern lands under **not yet triaged**, which is the honest
+  answer for one nobody has looked at. That section is the to-do list: shrink it by
+  fixing the test or by adding a reason that is actually true. A reason invented to make
+  the list look tidy is worse than no reason, because it stops anyone looking again.
+- A new reason is a line in `reasons`, most specific first — the first pattern to match a
+  test id claims it.
+
+`--update` prints how many lines it removed and how many it added, and shouts about any
+failure that was not already expected. A reseed that *adds* lines is raising the bar it
+is meant to lower, so say why in the PR.
+
 ## Checks
 
 Run these before opening a PR, and make sure they pass:
