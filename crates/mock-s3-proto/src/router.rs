@@ -41,7 +41,26 @@ pub fn router(engine: Arc<Engine>) -> Router {
     // of an empty one puts the layer outside the matching it needs to precede.
     Router::new()
         .fallback_service(routes)
+        .layer(axum::middleware::from_fn(attach_request_id))
         .layer(axum::middleware::from_fn(normalize_bucket_path))
+}
+
+/// Give every response a request id, the way S3 does.
+///
+/// An error response has already set one — it has to match the id inside the XML body —
+/// so this only fills in the gap for successful responses.
+async fn attach_request_id(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+
+    let name = http::HeaderName::from_static(crate::request_id::HEADER);
+    let headers = response.headers_mut();
+    if !headers.contains_key(&name)
+        && let Ok(value) = http::HeaderValue::from_str(&crate::request_id::next())
+    {
+        headers.insert(name, value);
+    }
+
+    response
 }
 
 /// Strip the trailing slash from a bucket-level path.

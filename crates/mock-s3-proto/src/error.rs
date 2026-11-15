@@ -1,5 +1,3 @@
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use axum::response::{IntoResponse, Response};
 use http::{StatusCode, header};
 use mock_s3_core::Error as CoreError;
@@ -45,13 +43,6 @@ impl S3Error {
     pub fn invalid_argument(message: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, "InvalidArgument", message)
     }
-}
-
-/// A request id, so responses carry one the way S3 does. It is a counter rather than a
-/// UUID because nothing depends on it being unguessable.
-fn request_id() -> String {
-    static NEXT: AtomicU64 = AtomicU64::new(1);
-    format!("{:016X}", NEXT.fetch_add(1, Ordering::Relaxed))
 }
 
 impl From<CoreError> for S3Error {
@@ -125,18 +116,26 @@ impl From<CoreError> for S3Error {
 
 impl IntoResponse for S3Error {
     fn into_response(self) -> Response {
-        let body = xml::error_document(
-            self.code,
-            &self.message,
-            self.resource.as_deref(),
-            &request_id(),
-        );
+        // The id in the body and the id in the header have to be the same one, which is
+        // why it is minted here rather than left to the layer that fills it in for
+        // successful responses.
+        let id = crate::request_id::next();
+        let body = xml::error_document(self.code, &self.message, self.resource.as_deref(), &id);
 
-        (
+        let mut response = (
             self.status,
             [(header::CONTENT_TYPE, "application/xml")],
             body,
         )
-            .into_response()
+            .into_response();
+
+        if let Ok(value) = http::HeaderValue::from_str(&id) {
+            response.headers_mut().insert(
+                http::HeaderName::from_static(crate::request_id::HEADER),
+                value,
+            );
+        }
+
+        response
     }
 }

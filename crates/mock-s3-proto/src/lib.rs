@@ -8,9 +8,11 @@ pub mod chunked;
 pub mod error;
 pub mod ops;
 pub mod query;
+pub mod request_id;
 pub mod response;
 pub mod router;
 pub mod sigv4;
+pub mod token;
 pub mod xml;
 
 pub use error::S3Error;
