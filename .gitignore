@@ -8,6 +8,10 @@
 /web/dist
 /web/.vite
 
+# client-side test suite
+/tests/node_modules
+/tests/.vitest
+
 # object data (--data defaults to ./data outside the container)
 /data
 
