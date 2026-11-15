@@ -119,4 +119,31 @@ export const admin = {
     }),
 
   requests: (limit = 100) => request<RequestEntry[]>(`/requests?limit=${limit}`),
+
+  /**
+   * Where the object's bytes are served from, with its own content type.
+   *
+   * A URL rather than a fetch, so an `<img>` can point straight at it and the browser
+   * handles caching, ranges and decoding instead of the app shuttling a blob around.
+   */
+  contentUrl: (bucket: string, key: string, download = false) => {
+    const params = new URLSearchParams({ key })
+    if (download) {
+      params.set("download", "1")
+    }
+    return `${BASE}/buckets/${encodeURIComponent(bucket)}/content?${params.toString()}`
+  },
+
+  /** The same bytes as text, for previewing something that is not an image. */
+  contentText: async (bucket: string, key: string, maxBytes: number): Promise<string> => {
+    const response = await fetch(admin.contentUrl(bucket, key))
+    if (!response.ok) {
+      throw await toError(response)
+    }
+
+    const buffer = await response.arrayBuffer()
+    const clipped = buffer.byteLength > maxBytes ? buffer.slice(0, maxBytes) : buffer
+
+    return new TextDecoder().decode(clipped)
+  },
 }

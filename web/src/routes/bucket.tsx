@@ -1,9 +1,11 @@
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { ChevronRight, File, Folder } from "lucide-react"
+import * as React from "react"
 import { toast } from "sonner"
 
 import { BucketActions } from "@/components/buckets/bucket-actions"
 import { Empty, Failure, Page, PageHeader, Stat } from "@/components/layout/page"
+import { ObjectSheet } from "@/components/objects/object-sheet"
 import { UploadButton } from "@/components/objects/upload-button"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -64,6 +66,7 @@ export function BucketPage() {
   const { bucket } = useParams({ from: "/buckets/$bucket" })
   const { prefix } = useSearch({ from: "/buckets/$bucket" })
   const navigate = useNavigate()
+  const [inspecting, setInspecting] = React.useState<string>()
 
   const detail = useAdmin(`bucket:${bucket}`, () => admin.bucket(bucket), { pollMs: 5000 })
   const listing = useAdmin(`objects:${bucket}:${prefix}`, () => admin.objects(bucket, prefix), {
@@ -179,9 +182,22 @@ export function BucketPage() {
               </TableRow>
             ))}
             {listing.data.objects.map((object) => (
-              <TableRow key={object.key}>
+              <TableRow
+                className="cursor-pointer"
+                key={object.key}
+                onClick={() => setInspecting(object.key)}
+              >
                 <TableCell>
-                  <span className="flex min-w-0 items-center gap-2">
+                  {/* A button inside the row as well as the row handler, so the key is
+                      reachable by keyboard and announced as the thing that opens. */}
+                  <button
+                    className="flex min-w-0 items-center gap-2 text-left"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setInspecting(object.key)
+                    }}
+                    type="button"
+                  >
                     <File
                       aria-hidden="true"
                       className="size-3.5 shrink-0 text-muted-foreground/60"
@@ -190,7 +206,7 @@ export function BucketPage() {
                     <span className="truncate font-mono text-[13px]" title={object.key}>
                       {keyLeaf(object.key, prefix) || object.key}
                     </span>
-                  </span>
+                  </button>
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {formatBytes(object.size)}
@@ -208,7 +224,14 @@ export function BucketPage() {
                 </TableCell>
                 <TableCell>
                   <div className="flex justify-end">
-                    <Button onClick={() => removeObject(object.key)} size="sm" variant="ghost">
+                    <Button
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        removeObject(object.key)
+                      }}
+                      size="sm"
+                      variant="ghost"
+                    >
                       Delete
                     </Button>
                   </div>
@@ -225,6 +248,13 @@ export function BucketPage() {
           </pre>
         </Empty>
       )}
+
+      <ObjectSheet
+        bucket={bucket}
+        objectKey={inspecting}
+        onClose={() => setInspecting(undefined)}
+        onDeleted={refresh}
+      />
     </Page>
   )
 }

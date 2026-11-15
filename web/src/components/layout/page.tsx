@@ -3,13 +3,17 @@ import type * as React from "react"
 import { cn } from "@/lib/utils"
 
 /**
- * The content column. Capped so a table does not stretch to the width of a 34" monitor
- * and leave the eye tracking across empty space to match a key to its size.
+ * The content column.
+ *
+ * Capped so a table does not stretch to the width of a 34" monitor and leave the eye
+ * tracking across empty space to match a key to its size — but left-aligned rather than
+ * centred, so it stays anchored to the sidebar instead of drifting into the middle of a
+ * wide window with a gap on either side.
  */
 export function Page({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <div className="h-svh flex-1 overflow-y-auto">
-      <div className={cn("mx-auto w-full max-w-5xl px-8 py-10", className)}>{children}</div>
+      <div className={cn("w-full max-w-[1080px] px-9 py-9", className)}>{children}</div>
     </div>
   )
 }

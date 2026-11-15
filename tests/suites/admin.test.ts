@@ -224,6 +224,86 @@ describe("the object endpoint", () => {
   })
 })
 
+describe("GET /_admin/buckets/{bucket}/content", () => {
+  const content = (bucket: string, key: string, download = false) =>
+    admin(
+      `/_admin/buckets/${bucket}/content?key=${encodeURIComponent(key)}${download ? "&download=1" : ""}`,
+    )
+
+  it("should serve the bytes with the object's own type", async () => {
+    const bucket = await createBucket("admin-content")
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: "note.txt",
+        Body: "hello",
+        ContentType: "text/plain",
+      }),
+    )
+
+    const response = await content(bucket, "note.txt")
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("text/plain")
+    expect(await response.text()).toBe("hello")
+  })
+
+  // A client can store anything under any content type. Serving an uploaded page as
+  // text/html from the console's own origin would let it script the admin API, so the
+  // type is neutered and sniffing is turned off.
+  it("should refuse to serve stored html as html", async () => {
+    const bucket = await createBucket("admin-html")
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: "evil.html",
+        Body: "<script>fetch('/_admin/reset', { method: 'POST' })</script>",
+        ContentType: "text/html",
+      }),
+    )
+
+    const response = await content(bucket, "evil.html")
+
+    expect(response.headers.get("content-type")).toContain("text/plain")
+    expect(response.headers.get("content-type")).not.toContain("html")
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff")
+  })
+
+  it("should neuter svg and javascript the same way", async () => {
+    const bucket = await createBucket("admin-svg")
+    for (const [key, type] of [
+      ["a.svg", "image/svg+xml"],
+      ["b.js", "text/javascript"],
+    ]) {
+      await s3.send(
+        new PutObjectCommand({ Bucket: bucket, Key: key, Body: "x", ContentType: type }),
+      )
+      const response = await content(bucket, key)
+      expect(response.headers.get("content-type")).toContain("text/plain")
+    }
+  })
+
+  it("should offer a download when asked", async () => {
+    const bucket = await createBucket("admin-dl")
+    await s3.send(new PutObjectCommand({ Bucket: bucket, Key: "deep/report.txt", Body: "x" }))
+
+    const inline = await content(bucket, "deep/report.txt")
+    const attached = await content(bucket, "deep/report.txt", true)
+
+    expect(inline.headers.get("content-disposition")).toBe("inline")
+    expect(attached.headers.get("content-disposition")).toContain("attachment")
+    expect(attached.headers.get("content-disposition")).toContain("report.txt")
+  })
+
+  it("should report a key that is not there", async () => {
+    const bucket = await createBucket("admin-nocontent")
+
+    const response = await content(bucket, "absent.bin")
+
+    expect(response.status).toBe(404)
+  })
+})
+
 describe("POST /_admin/reset/{bucket}", () => {
   it("should empty a bucket and keep it", async () => {
     const bucket = await createBucket("admin-purge")

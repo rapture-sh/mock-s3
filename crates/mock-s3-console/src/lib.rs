@@ -158,6 +158,13 @@ pub struct KeyQuery {
 }
 
 #[derive(Deserialize)]
+pub struct ContentQuery {
+    key: String,
+    /// Present at all — `?download=1`, `?download` — means save rather than render.
+    download: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct RequestQuery {
     limit: Option<usize>,
 }
@@ -194,6 +201,7 @@ pub fn router(
                 // default cap is 2 MB.
                 .layer(DefaultBodyLimit::disable()),
         )
+        .route("/_admin/buckets/:bucket/content", get(object_content))
         .route("/_admin/requests", get(requests))
         .route("/_admin/reset", post(reset))
         .route("/_admin/reset/:bucket", post(reset_bucket))
@@ -427,6 +435,71 @@ async fn put_object(
             content_type: meta.content_type,
         }),
     ))
+}
+
+/// The object's bytes, so the console can show it.
+///
+/// Served from the console port with the object's own content type, which is what lets
+/// an `<img>` tag point straight at it. `?download=1` asks the browser to save it
+/// instead of rendering it.
+///
+/// The content type is the one the object was stored with, and a client can store
+/// anything — so the response says `nosniff` and never `text/html`. Without that, an
+/// uploaded page would run as script on the console's own origin, where it could drive
+/// the admin API.
+async fn object_content(
+    State(state): State<ConsoleState>,
+    Path(bucket): Path<String>,
+    Query(query): Query<ContentQuery>,
+) -> AdminResult<Response> {
+    let object = state.engine.get_object(&bucket, &query.key).await?;
+
+    let declared = object.meta.content_type.to_ascii_lowercase();
+    let renderable = !(declared.contains("html")
+        || declared.contains("xhtml")
+        || declared.contains("svg")
+        || declared.contains("javascript")
+        || declared.contains("xml"));
+
+    let content_type = if renderable {
+        object.meta.content_type.clone()
+    } else {
+        "text/plain; charset=utf-8".to_string()
+    };
+
+    let disposition = if query.download.is_some() {
+        // The name only reaches the browser as a suggestion, and a key can hold quotes
+        // or newlines, so anything but the simplest name is left to the browser.
+        let leaf = query.key.rsplit('/').next().unwrap_or("download");
+        let safe: String = leaf
+            .chars()
+            .filter(|character| character.is_ascii_alphanumeric() || "._- ".contains(*character))
+            .collect();
+        format!(
+            "attachment; filename=\"{}\"",
+            if safe.is_empty() { "download" } else { &safe }
+        )
+    } else {
+        "inline".to_string()
+    };
+
+    let mut headers = http::HeaderMap::new();
+    headers.insert(
+        http::header::CONTENT_TYPE,
+        http::HeaderValue::from_str(&content_type)
+            .unwrap_or_else(|_| http::HeaderValue::from_static("application/octet-stream")),
+    );
+    headers.insert(
+        http::header::CONTENT_DISPOSITION,
+        http::HeaderValue::from_str(&disposition)
+            .unwrap_or_else(|_| http::HeaderValue::from_static("inline")),
+    );
+    headers.insert(
+        http::HeaderName::from_static("x-content-type-options"),
+        http::HeaderValue::from_static("nosniff"),
+    );
+
+    Ok((StatusCode::OK, headers, object.body).into_response())
 }
 
 async fn delete_object(
