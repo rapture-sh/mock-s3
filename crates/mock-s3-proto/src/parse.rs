@@ -37,33 +37,50 @@ fn malformed(detail: impl std::fmt::Display) -> S3Error {
     )
 }
 
-/// Walk an XML body, handing each (element, text) pair to `visit`.
+/// Walk an XML body, handing each element's name and text to `visit`.
 ///
-/// Both bodies here are flat enough that knowing the innermost open element and when it
-/// closes is all the structure needed.
+/// `visit` is called with `(name, None)` when an element opens, `(name, Some(text))`
+/// when it closes, and `("/name", None)` after that — enough structure for the flat
+/// bodies S3 accepts.
+///
+/// **Text is never trimmed.** An object key may legitimately begin or end with a space:
+/// S3 accepts `" "` and `"_ "` as keys, and trimming them turns a delete of one object
+/// into a delete of a different one. Callers that want a number or a flag trim their own
+/// value; callers handling keys must not.
+///
+/// Text is accumulated rather than reported as it arrives, because a value split across
+/// events — by an entity reference or a CDATA section — would otherwise be delivered in
+/// pieces and the last piece would win.
 pub(crate) fn walk(body: &[u8], mut visit: impl FnMut(&str, Option<&str>)) -> Result<(), S3Error> {
     let text = std::str::from_utf8(body).map_err(|_| malformed("the body was not UTF-8"))?;
 
     let mut reader = Reader::from_str(text);
-    reader.config_mut().trim_text(true);
 
-    let mut open = String::new();
+    let mut open: Vec<String> = Vec::new();
+    let mut collected = String::new();
+
     loop {
         match reader.read_event() {
             Ok(Event::Start(element)) => {
-                open = String::from_utf8_lossy(element.local_name().as_ref()).into_owned();
-                visit(&open, None);
+                let name = String::from_utf8_lossy(element.local_name().as_ref()).into_owned();
+                visit(&name, None);
+                open.push(name);
+                collected.clear();
             }
             Ok(Event::Text(contents)) => {
-                let value = contents.unescape().map_err(malformed)?.into_owned();
-                if !open.is_empty() {
-                    visit(&open, Some(&value));
-                }
+                collected.push_str(&contents.unescape().map_err(malformed)?);
+            }
+            Ok(Event::CData(contents)) => {
+                collected.push_str(&String::from_utf8_lossy(&contents));
             }
             Ok(Event::End(element)) => {
                 let name = String::from_utf8_lossy(element.local_name().as_ref()).into_owned();
+                if open.last().map(String::as_str) == Some(name.as_str()) {
+                    open.pop();
+                    visit(&name, Some(&collected));
+                }
                 visit(&format!("/{name}"), None);
-                open.clear();
+                collected.clear();
             }
             Ok(Event::Eof) => return Ok(()),
             Err(error) => return Err(malformed(error)),
@@ -236,6 +253,37 @@ mod tests {
                 delete_objects(b"<Delete></Delete>").unwrap_err().code,
                 "MalformedXML"
             );
+        }
+
+        /// S3 accepts a key that is nothing but a space, and one that ends in a space.
+        /// Trimming either turns a delete into a delete of something else.
+        #[test]
+        fn should_preserve_whitespace_in_a_key() {
+            let body = b"<Delete><Object><Key> </Key></Object>\
+                         <Object><Key>_ </Key></Object>\
+                         <Object><Key> leading</Key></Object></Delete>";
+
+            let request = delete_objects(body).unwrap();
+
+            assert_eq!(request.keys, vec![" ", "_ ", " leading"]);
+        }
+
+        #[test]
+        fn should_ignore_the_whitespace_between_elements() {
+            let body = br#"<Delete>
+                <Object>
+                    <Key>a.txt</Key>
+                </Object>
+            </Delete>"#;
+
+            assert_eq!(delete_objects(body).unwrap().keys, vec!["a.txt"]);
+        }
+
+        #[test]
+        fn should_read_a_key_split_across_an_entity_reference() {
+            let body = b"<Delete><Object><Key>a&amp;b&amp;c</Key></Object></Delete>";
+
+            assert_eq!(delete_objects(body).unwrap().keys, vec!["a&b&c"]);
         }
     }
 }
