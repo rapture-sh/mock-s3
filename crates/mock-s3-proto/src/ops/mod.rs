@@ -26,6 +26,61 @@ pub(crate) fn user_metadata(headers: &HeaderMap) -> BTreeMap<String, String> {
         .collect()
 }
 
+/// Headers S3 stores with an object and returns on the way out.
+///
+/// Anything here is kept verbatim and echoed back; mock-s3 does not act on any of them.
+/// That is enough for the clients that set them, and it keeps the engine out of the
+/// business of knowing what a storage class is.
+const PRESERVED_HEADERS: &[&str] = &[
+    "cache-control",
+    "content-disposition",
+    "content-language",
+    "expires",
+    "x-amz-server-side-encryption",
+    "x-amz-server-side-encryption-aws-kms-key-id",
+    "x-amz-storage-class",
+    "x-amz-website-redirect-location",
+];
+
+/// Checksum headers are a family rather than a fixed list, so they match by prefix.
+const CHECKSUM_PREFIX: &str = "x-amz-checksum-";
+
+/// Collect the headers worth keeping with an object.
+///
+/// `Content-Encoding` needs care: a streaming-signed upload arrives with `aws-chunked`
+/// in it, describing the transfer rather than the object. Real S3 strips that, and so
+/// must this — otherwise every client that downloads the object is told to un-chunk
+/// bytes that were already un-chunked on the way in.
+pub(crate) fn system_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
+    let mut kept = BTreeMap::new();
+
+    for (name, value) in headers {
+        let name = name.as_str();
+        let Ok(value) = value.to_str() else { continue };
+
+        let worth_keeping = PRESERVED_HEADERS.contains(&name) || name.starts_with(CHECKSUM_PREFIX);
+        if worth_keeping {
+            kept.insert(name.to_string(), value.to_string());
+        }
+    }
+
+    if let Some(encoding) = headers
+        .get(http::header::CONTENT_ENCODING)
+        .and_then(|value| value.to_str().ok())
+    {
+        let remaining: Vec<&str> = encoding
+            .split(',')
+            .map(str::trim)
+            .filter(|part| !part.is_empty() && !part.eq_ignore_ascii_case("aws-chunked"))
+            .collect();
+        if !remaining.is_empty() {
+            kept.insert("content-encoding".to_string(), remaining.join(", "));
+        }
+    }
+
+    kept
+}
+
 /// The content type a caller sent, or what S3 assigns when they sent none.
 pub(crate) fn content_type(headers: &HeaderMap) -> String {
     headers

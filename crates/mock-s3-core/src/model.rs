@@ -28,6 +28,42 @@ pub struct ObjectMeta {
     pub content_type: String,
     #[serde(default)]
     pub user_metadata: BTreeMap<String, String>,
+    /// Headers S3 keeps with an object and hands back on the way out: cache control,
+    /// content disposition, storage class, server-side encryption, checksums.
+    ///
+    /// Stored as a map rather than a field each, because the engine does not care what
+    /// any of them mean — which header names are worth keeping is a protocol decision,
+    /// so it lives in `mock-s3-proto`.
+    #[serde(default)]
+    pub system_headers: BTreeMap<String, String>,
+}
+
+/// Everything a put carries besides the payload itself.
+#[derive(Debug, Clone)]
+pub struct PutOptions {
+    pub content_type: String,
+    pub user_metadata: BTreeMap<String, String>,
+    pub system_headers: BTreeMap<String, String>,
+}
+
+impl Default for PutOptions {
+    fn default() -> Self {
+        Self {
+            content_type: DEFAULT_CONTENT_TYPE.to_string(),
+            user_metadata: BTreeMap::new(),
+            system_headers: BTreeMap::new(),
+        }
+    }
+}
+
+impl PutOptions {
+    /// Options carrying nothing but a content type, which is what most callers want.
+    pub fn with_content_type(content_type: impl Into<String>) -> Self {
+        Self {
+            content_type: content_type.into(),
+            ..Default::default()
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

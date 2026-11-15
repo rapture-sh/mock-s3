@@ -1,10 +1,9 @@
-use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
 use bytes::Bytes;
 
 use crate::error::{Error, Result};
-use crate::model::{BucketInfo, ObjectData, ObjectMeta};
+use crate::model::{BucketInfo, ObjectData, ObjectMeta, PutOptions};
 
 pub mod disk;
 pub mod memory;
@@ -31,8 +30,7 @@ pub trait Store: Send + Sync + 'static {
         bucket: &str,
         key: &str,
         body: Bytes,
-        content_type: &str,
-        user_metadata: BTreeMap<String, String>,
+        options: PutOptions,
     ) -> Result<ObjectMeta>;
 
     async fn get_object(&self, bucket: &str, key: &str) -> Result<ObjectData>;

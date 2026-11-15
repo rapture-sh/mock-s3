@@ -139,6 +139,7 @@ mod tests {
             last_modified: Utc::now(),
             content_type: "binary/octet-stream".into(),
             user_metadata: Default::default(),
+            system_headers: Default::default(),
         }
     }
 

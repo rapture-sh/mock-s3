@@ -5,7 +5,7 @@ use chrono::Utc;
 use dashmap::DashMap;
 
 use crate::error::{Error, Result};
-use crate::model::{BucketInfo, ObjectData, ObjectMeta, compute_etag};
+use crate::model::{BucketInfo, ObjectData, ObjectMeta, PutOptions, compute_etag};
 use crate::store::Store;
 
 /// The `--in-memory` backend. Nothing survives the process.
@@ -75,8 +75,7 @@ impl Store for MemoryStore {
         bucket: &str,
         key: &str,
         body: Bytes,
-        content_type: &str,
-        user_metadata: BTreeMap<String, String>,
+        options: PutOptions,
     ) -> Result<ObjectMeta> {
         let mut entry = self
             .buckets
@@ -88,8 +87,9 @@ impl Store for MemoryStore {
             size: body.len() as u64,
             etag: compute_etag(&body),
             last_modified: Utc::now(),
-            content_type: content_type.to_string(),
-            user_metadata,
+            content_type: options.content_type,
+            user_metadata: options.user_metadata,
+            system_headers: options.system_headers,
         };
         entry.objects.insert(key.to_string(), (meta.clone(), body));
         Ok(meta)
@@ -169,8 +169,7 @@ mod tests {
                 "test",
                 "a.txt",
                 Bytes::from_static(b"hello"),
-                "text/plain",
-                BTreeMap::new(),
+                PutOptions::with_content_type("text/plain"),
             )
             .await
             .unwrap();
@@ -195,7 +194,7 @@ mod tests {
         let store = MemoryStore::new();
 
         let error = store
-            .put_object("nope", "a", Bytes::new(), "text/plain", BTreeMap::new())
+            .put_object("nope", "a", Bytes::new(), PutOptions::default())
             .await
             .unwrap_err();
 
@@ -206,7 +205,7 @@ mod tests {
     async fn should_refuse_to_delete_a_bucket_that_still_holds_objects() {
         let store = store_with_bucket().await;
         store
-            .put_object("test", "a", Bytes::new(), "text/plain", BTreeMap::new())
+            .put_object("test", "a", Bytes::new(), PutOptions::default())
             .await
             .unwrap();
 
@@ -220,7 +219,7 @@ mod tests {
         let store = store_with_bucket().await;
         for key in ["c", "a", "b"] {
             store
-                .put_object("test", key, Bytes::new(), "text/plain", BTreeMap::new())
+                .put_object("test", key, Bytes::new(), PutOptions::default())
                 .await
                 .unwrap();
         }

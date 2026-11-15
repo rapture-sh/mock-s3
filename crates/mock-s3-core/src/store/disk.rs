@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::model::{BucketInfo, ObjectData, ObjectMeta, compute_etag};
+use crate::model::{BucketInfo, ObjectData, ObjectMeta, PutOptions, compute_etag};
 use crate::store::{Store, guess_content_type, key_to_relative_path, relative_path_to_key};
 
 /// The default backend, writing into the mounted data volume.
@@ -40,6 +40,8 @@ struct MetaRecord {
     last_modified: DateTime<Utc>,
     #[serde(default)]
     user_metadata: BTreeMap<String, String>,
+    #[serde(default)]
+    system_headers: BTreeMap<String, String>,
 }
 
 impl DiskStore {
@@ -143,6 +145,7 @@ impl DiskStore {
                     last_modified: record.last_modified,
                     content_type: record.content_type,
                     user_metadata: record.user_metadata,
+                    system_headers: record.system_headers,
                 });
             }
             tracing::warn!(key, "sidecar metadata is unreadable, synthesising it");
@@ -159,6 +162,7 @@ impl DiskStore {
                 .unwrap_or_else(|_| Utc::now()),
             content_type: guess_content_type(key).to_string(),
             user_metadata: BTreeMap::new(),
+            system_headers: BTreeMap::new(),
         })
     }
 
@@ -257,8 +261,7 @@ impl Store for DiskStore {
         bucket: &str,
         key: &str,
         body: Bytes,
-        content_type: &str,
-        user_metadata: BTreeMap<String, String>,
+        options: PutOptions,
     ) -> Result<ObjectMeta> {
         self.require_bucket(bucket).await?;
 
@@ -272,8 +275,9 @@ impl Store for DiskStore {
             size: body.len() as u64,
             etag: compute_etag(&body),
             last_modified: Utc::now(),
-            content_type: content_type.to_string(),
-            user_metadata,
+            content_type: options.content_type,
+            user_metadata: options.user_metadata,
+            system_headers: options.system_headers,
         };
 
         tokio::fs::write(&object_path, &body).await?;
@@ -284,6 +288,7 @@ impl Store for DiskStore {
             size: meta.size,
             last_modified: meta.last_modified,
             user_metadata: meta.user_metadata.clone(),
+            system_headers: meta.system_headers.clone(),
         };
         let encoded = serde_json::to_vec_pretty(&record)
             .map_err(|error| Error::InvalidArgument(error.to_string()))?;

@@ -395,6 +395,7 @@ mod tests {
                 last_modified: at(0),
                 content_type: "text/plain".into(),
                 user_metadata: Default::default(),
+                system_headers: Default::default(),
             }
         }
 

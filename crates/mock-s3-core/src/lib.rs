@@ -5,7 +5,6 @@
 //! fiddly — listing pagination, key-to-path resolution — can be tested without binding
 //! a port.
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -17,7 +16,7 @@ pub mod store;
 
 pub use error::{Error, Result};
 pub use listing::{ListRequest, ListResult};
-pub use model::{BucketInfo, ObjectData, ObjectMeta};
+pub use model::{BucketInfo, ObjectData, ObjectMeta, PutOptions};
 pub use store::{DiskStore, MemoryStore, Store};
 
 /// The engine every request goes through, whichever listener it arrived on.
@@ -64,13 +63,10 @@ impl Engine {
         bucket: &str,
         key: &str,
         body: Bytes,
-        content_type: &str,
-        user_metadata: BTreeMap<String, String>,
+        options: PutOptions,
     ) -> Result<ObjectMeta> {
         model::validate_key(key)?;
-        self.store
-            .put_object(bucket, key, body, content_type, user_metadata)
-            .await
+        self.store.put_object(bucket, key, body, options).await
     }
 
     pub async fn get_object(&self, bucket: &str, key: &str) -> Result<ObjectData> {

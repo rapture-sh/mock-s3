@@ -35,15 +35,13 @@ pub async fn put(
     // headers would be stored as part of the object.
     let body = crate::chunked::decode(body, &headers)?;
 
-    let meta = engine
-        .put_object(
-            &bucket,
-            &key,
-            body,
-            &ops::content_type(&headers),
-            ops::user_metadata(&headers),
-        )
-        .await?;
+    let options = mock_s3_core::PutOptions {
+        content_type: ops::content_type(&headers),
+        user_metadata: ops::user_metadata(&headers),
+        system_headers: ops::system_headers(&headers),
+    };
+
+    let meta = engine.put_object(&bucket, &key, body, options).await?;
 
     let mut out = HeaderMap::new();
     response::set(&mut out, header::ETAG, &quoted(&meta.etag));
@@ -71,7 +69,7 @@ pub async fn get(
 
     match range {
         None => {
-            let mut out = object_headers(&object.meta);
+            let mut out = object_headers(&object.meta, Checksums::Include);
             response::set(&mut out, header::CONTENT_LENGTH, &size.to_string());
             Ok((StatusCode::OK, out, object.body).into_response())
         }
@@ -87,7 +85,10 @@ pub async fn get(
             // Inclusive on both ends, which is how HTTP ranges work.
             let slice = object.body.slice(start as usize..=end as usize);
 
-            let mut out = object_headers(&object.meta);
+            // A stored checksum covers the whole object. A client that validates it
+            // against a partial body rejects the response, so S3 leaves it off a range
+            // and so do we.
+            let mut out = object_headers(&object.meta, Checksums::Omit);
             response::set(&mut out, header::CONTENT_LENGTH, &slice.len().to_string());
             response::set(
                 &mut out,
@@ -106,7 +107,7 @@ pub async fn head(
 ) -> Result<Response, S3Error> {
     let meta = engine.head_object(&bucket, &key).await?;
 
-    let mut out = object_headers(&meta);
+    let mut out = object_headers(&meta, Checksums::Include);
     response::set(&mut out, header::CONTENT_LENGTH, &meta.size.to_string());
     Ok(response::empty(StatusCode::OK, out))
 }
@@ -144,7 +145,14 @@ fn quoted(etag: &str) -> String {
     format!("\"{etag}\"")
 }
 
-fn object_headers(meta: &ObjectMeta) -> HeaderMap {
+/// Whether a response should carry the object's stored checksums.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Checksums {
+    Include,
+    Omit,
+}
+
+fn object_headers(meta: &ObjectMeta, checksums: Checksums) -> HeaderMap {
     let mut headers = HeaderMap::new();
 
     response::set(&mut headers, header::CONTENT_TYPE, &meta.content_type);
@@ -159,6 +167,16 @@ fn object_headers(meta: &ObjectMeta) -> HeaderMap {
         HeaderName::from_static("accept-ranges"),
         "bytes",
     );
+    // Kept verbatim on the way in, handed back verbatim on the way out.
+    for (name, value) in &meta.system_headers {
+        if checksums == Checksums::Omit && name.starts_with("x-amz-checksum-") {
+            continue;
+        }
+        match HeaderName::try_from(name.as_str()) {
+            Ok(name) => response::set(&mut headers, name, value),
+            Err(_) => tracing::debug!(name, "dropping a stored header with an invalid name"),
+        }
+    }
     for (name, value) in &meta.user_metadata {
         response::set_user_metadata(&mut headers, name, value);
     }
