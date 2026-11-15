@@ -3,17 +3,18 @@ import type * as React from "react"
 import { cn } from "@/lib/utils"
 
 /**
- * The content column.
+ * The content column: centred in whatever space the sidebar leaves, and capped.
  *
- * Capped so a table does not stretch to the width of a 34" monitor and leave the eye
- * tracking across empty space to match a key to its size — but left-aligned rather than
- * centred, so it stays anchored to the sidebar instead of drifting into the middle of a
- * wide window with a gap on either side.
+ * The cap is what stops a table stretching across a 34" monitor and leaving the eye to
+ * track half a metre from a key to its size. The width matters as much as the centring:
+ * at 1024px the margins on a wide window read as a layout bug rather than a margin, and
+ * left-aligning instead only moved the empty space to one side, where on an ultrawide it
+ * looks worse still. Wide enough that the gaps look deliberate, narrow enough to scan.
  */
 export function Page({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <div className="h-svh flex-1 overflow-y-auto">
-      <div className={cn("w-full max-w-[1080px] px-9 py-9", className)}>{children}</div>
+      <div className={cn("mx-auto w-full max-w-[1400px] px-10 py-9", className)}>{children}</div>
     </div>
   )
 }
