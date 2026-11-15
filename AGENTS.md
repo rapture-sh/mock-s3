@@ -16,20 +16,26 @@ can be hosted.
 It is part of [Rapture.sh](https://rapture.sh) and is MIT licensed.
 
 **What is in the tree right now.** Buckets, objects, listings, ranges, conditional
-requests, multipart uploads, `CopyObject`, `DeleteObjects`, CORS with preflight, the
-bucket settings clients probe, `aws-chunked` uploads, request ids and a request log all
-work, verified by the Rust SDK suite in `crates/conformance`, the JavaScript SDK suite in
-`tests/`, the AWS CLI script in `tests/cli/` and the ceph/s3-tests target in
-`tests/s3-tests/`. Bucket versioning and fault injection have no code, and neither does
+requests, multipart uploads, `CopyObject`, `DeleteObjects`, bucket versioning, CORS with
+preflight, the bucket settings clients probe, `aws-chunked` uploads, request ids and a
+request log all work, verified by the Rust SDK suite in `crates/conformance`, the
+JavaScript SDK suite in `tests/`, the AWS CLI script in `tests/cli/` and the
+ceph/s3-tests target in `tests/s3-tests/`. Fault injection has no code, and neither does
 the console frontend — the console serves a placeholder page over a working admin API.
 Where this file names something that has not landed, it is the contract for building it
 rather than code you can read, so check that a file exists before assuming it.
 
-Two storage conventions worth knowing before changing anything: multipart parts and
-bucket configuration are ordinary objects under the hidden `.mock-s3/` prefix, filtered
-out of every listing by `bucket_config::is_hidden`. That is why both backends support
-them without the `Store` trait growing a method, and why a new listing path must keep
-that filter.
+Two storage conventions worth knowing before changing anything: multipart parts, object
+versions, delete markers and bucket configuration are all ordinary objects under the
+hidden `.mock-s3/` prefix, filtered out of every listing by `bucket_config::is_hidden`.
+That is why both backends support them without the `Store` trait growing a method, and
+why a new listing path must keep that filter.
+
+Versioning in particular is built to be additive: `objects/<key>` is the `null` version,
+which is what S3 calls an object stored before versioning was enabled, so turning it on
+changes nothing already on disk. `core::versioning` documents the layout and the one
+invariant it rests on — a key has at most one null entry, the object or a null delete
+marker, never both.
 
 **The console is optional.** It is a viewer and nothing more: `--no-console` turns it off
 and the S3 API is unaffected. No S3 behaviour may ever depend on it being there.
@@ -115,6 +121,7 @@ crates/
     src/model.rs             Bucket, ObjectKey, ETag, Metadata
     src/listing.rs           prefix and delimiter to common prefixes
     src/multipart.rs         upload id state machine
+    src/versioning.rs        version ids, delete markers, the null version
     src/fault.rs             per-bucket fault rules
     src/store/mod.rs         the Store trait, and safe key to path resolution
     src/store/disk.rs        default backend, writes under --data

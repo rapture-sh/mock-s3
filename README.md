@@ -114,6 +114,18 @@ A payload dropped into `objects/` without a sidecar is still served — size, mo
 time and content type are worked out from the file itself — so a volume can be
 pre-seeded with assets before anything starts.
 
+Versioning adds to that rather than changing it. `objects/<key>` stays where it is and
+becomes the `null` version; everything else goes under a hidden prefix that no listing
+shows:
+
+```
+/data/buckets/<bucket>/objects/.mock-s3/versions/<version>/<key>   a non-null version
+/data/buckets/<bucket>/objects/.mock-s3/markers/<version>/<key>    a delete marker
+```
+
+So a volume written before versioning existed still works, and a bucket you enable
+versioning on keeps serving every object it already had.
+
 Two consequences of mirroring, both deliberate:
 
 - A key cannot both hold data and act as a directory for other keys. `photos` and
@@ -176,11 +188,13 @@ Supported operations
 | Service | `ListBuckets` | working |
 | Bucket | `CreateBucket`, `DeleteBucket`, `HeadBucket` | working |
 | Bucket | `ListObjectsV2`, `ListObjects` | working, with prefix, delimiter, `max-keys` and continuation tokens |
-| Bucket | `GetBucketLocation`, `GetBucketVersioning` | working |
+| Bucket | `GetBucketLocation` | working |
+| Bucket | `PutBucketVersioning`, `GetBucketVersioning` | working, enabled and suspended |
+| Bucket | `ListObjectVersions` | working, with prefix, delimiter and both page markers |
 | Bucket | `GetBucketAcl`, `GetBucketRequestPayment` | working |
 | Bucket | `PutBucketCors`, `GetBucketCors`, `DeleteBucketCors`, and `OPTIONS` preflight | working |
 | Bucket | `DeleteObjects` | working |
-| Object | `PutObject`, `GetObject`, `HeadObject`, `DeleteObject`, `CopyObject` | working |
+| Object | `PutObject`, `GetObject`, `HeadObject`, `DeleteObject`, `CopyObject` | working, with `versionId` |
 | Object | `GetObject` with a single `Range` | working |
 | Object | `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since` | working |
 | Object | `GetObjectAcl`, `GetObjectTagging` | working |
@@ -204,10 +218,25 @@ requested headers, including `https://*.example.com` wildcards — and the
 to miss. With no configuration stored, a preflight is refused, exactly as S3 refuses it;
 a mock that allowed everything would let a web app pass here and fail against AWS.
 
-**Not implemented:** bucket versioning (`ListObjectVersions`, version ids, delete
-markers), `UploadPartCopy`, and real ACL or policy enforcement. Anything genuinely
-missing answers `501 NotImplemented` rather than pretending to succeed, so a test that
-needs it fails loudly instead of passing against a lie.
+**Bucket versioning works**, enabled or suspended, with version ids, delete markers and
+a paginated `?versions` listing. Enabling it on a bucket that already holds objects
+changes nothing on disk: those objects become the `null` version, which is what real S3
+calls them too. A delete then leaves a marker rather than removing anything, so the key
+reads as a `404` carrying `x-amz-delete-marker` while its earlier versions stay readable
+by id — and deleting the marker puts the object back.
+
+Two divergences worth knowing, both because mock-s3 cannot tell what real S3 can:
+
+- A `versionId` that does not exist answers `404 NoSuchVersion`. Real S3 separates a
+  malformed id (`400 InvalidArgument`) from a well-formed one that names nothing; version
+  ids here are opaque, so there is no malformed to recognise.
+- A `PUT` into a suspended bucket does not send `x-amz-version-id`. The write is the
+  `null` version either way, and leaving the header off is the clearer signal that
+  nothing new was kept.
+
+**Not implemented:** `UploadPartCopy`, MFA delete, and real ACL or policy enforcement.
+Anything genuinely missing answers `501 NotImplemented` rather than pretending to
+succeed, so a test that needs it fails loudly instead of passing against a lie.
 
 Working today alongside the operations: user metadata round-tripping through
 `x-amz-meta-*`, content type preservation, MD5 ETags, `encoding-type=url` listings,

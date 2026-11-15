@@ -111,8 +111,8 @@ outside measure of how compatible this actually is, and the list only ever shrin
 failure that is not in it fails the run.
 
 Expect a long list. The suite assumes real S3 with several accounts, and mock-s3
-deliberately has no account model, versioning, lifecycle or policy enforcement, so every
-test covering those is expected to fail. Moving one line out of that file is a better
+deliberately has no account model, lifecycle or policy enforcement, so every test
+covering those is expected to fail. Moving one line out of that file is a better
 contribution than most features.
 
 ## Checks
