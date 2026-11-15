@@ -25,7 +25,7 @@ Running it
 ----------
 
 ```bash
-docker run --rm -p 9000:9000 -p 9001:9001 -v mock-s3-data:/data rapturesh/mock-s3:latest
+docker run --rm -p 9000:9000 -p 9001:9001 -v mock-s3-data:/data ghcr.io/rapture-sh/mock-s3:latest
 ```
 
 S3 API on `:9000`, web console on `:9001`. Objects live in the volume mounted at
@@ -37,7 +37,7 @@ the S3 API.
 ```yaml
 services:
   s3:
-    image: rapturesh/mock-s3:latest
+    image: ghcr.io/rapture-sh/mock-s3:latest
     ports:
       - "9000:9000"
       - "9001:9001"

@@ -25,7 +25,9 @@ exists before assuming it.
 **The console is optional.** It is a viewer and nothing more: `--no-console` turns it off
 and the S3 API is unaffected. No S3 behaviour may ever depend on it being there.
 
-Published images go to Docker Hub as `rapturesh/mock-s3`.
+Published images go to the GitHub Container Registry as `ghcr.io/rapture-sh/mock-s3`.
+Public images there have no anonymous pull limit, which matters for a tool that CI pulls
+on every run.
 
 ## The rules that matter
 

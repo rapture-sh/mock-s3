@@ -149,6 +149,40 @@ Branches: `feat/<short-name>` or `fix/<short-name>`, cut from `main`.
 Reviews are about the code, never the person. See
 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
+## Releasing
+
+For maintainers. Images go to `ghcr.io/rapture-sh/mock-s3` by hand; there is no release
+workflow.
+
+Authenticate with a personal access token that has the `write:packages` scope, not your
+account password:
+
+```bash
+docker login ghcr.io -u <github-username>
+```
+
+Then build and push, tagging both the version and `latest`:
+
+```bash
+cargo xtask docker
+docker tag ghcr.io/rapture-sh/mock-s3:dev ghcr.io/rapture-sh/mock-s3:1.0.0
+docker push ghcr.io/rapture-sh/mock-s3:1.0.0
+docker tag ghcr.io/rapture-sh/mock-s3:1.0.0 ghcr.io/rapture-sh/mock-s3:latest
+docker push ghcr.io/rapture-sh/mock-s3:latest
+```
+
+**The first push creates a private package.** An anonymous `docker pull` fails with an
+authentication error — which reads like a missing image — until the package is made
+public: open it from the repository's Packages list, then Package settings, then change
+visibility to public. It only needs doing once.
+
+Keep the version in the workspace `Cargo.toml` and the image tag in step, and tag the
+commit to match:
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
 ## Forking
 
 Fork it, run your own copy, build something else on top; that is what MIT is for.
