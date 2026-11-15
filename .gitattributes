@@ -1,0 +1,19 @@
+# Normalise every text file to LF, in the repository and in the working tree, whatever
+# core.autocrlf is set to locally. Without this, a contributor on Windows can produce a
+# diff that touches every line of a file they barely edited.
+* text=auto eol=lf
+
+# Generated. Still diffable, but collapsed by default in review.
+Cargo.lock linguist-generated
+pnpm-lock.yaml linguist-generated
+
+# Binary, so never line-ending converted and never diffed as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
