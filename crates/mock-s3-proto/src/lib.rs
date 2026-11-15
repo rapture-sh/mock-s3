@@ -4,6 +4,7 @@
 //! call the engine in `mock-s3-core`, and map the result back onto the status codes,
 //! headers and XML shapes that real S3 uses. No storage logic lives here.
 
+pub mod chunked;
 pub mod error;
 pub mod ops;
 pub mod query;

@@ -31,6 +31,10 @@ pub async fn put(
         return Err(S3Error::not_implemented("CopyObject"));
     }
 
+    // A streaming-signed upload arrives wrapped in chunk framing. Without this the frame
+    // headers would be stored as part of the object.
+    let body = crate::chunked::decode(body, &headers)?;
+
     let meta = engine
         .put_object(
             &bucket,
