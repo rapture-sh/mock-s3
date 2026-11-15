@@ -50,12 +50,16 @@ impl Engine {
         self.store.create_bucket(bucket).await
     }
 
-    /// Delete a bucket, which S3 only allows once it is empty.
+    /// Delete a bucket, which S3 only allows once it holds no objects.
     ///
-    /// "Empty" means empty of what a client can see, plus no upload still in flight —
-    /// which is what S3 requires. mock-s3's own bookkeeping under the hidden prefix does
-    /// not count and is swept away here: leaving it to block the delete would mean a
-    /// client staring at an empty listing and an unexplainable `BucketNotEmpty`.
+    /// "No objects" means none a client can see. Two things deliberately do not count:
+    ///
+    /// - mock-s3's own bookkeeping under the hidden prefix, because a client staring at
+    ///   an empty listing and an unexplainable `BucketNotEmpty` has no way forward.
+    /// - an upload still in flight. S3's own documentation lists only objects, and the
+    ///   compatibility suite's cleanup deletes objects and then the bucket with no abort
+    ///   step — so blocking here would break every client that follows the same order.
+    ///   The upload is discarded with the bucket.
     pub async fn delete_bucket(&self, bucket: &str) -> Result<()> {
         if !self
             .list_objects(bucket, &ListRequest::default())
@@ -63,9 +67,6 @@ impl Engine {
             .objects
             .is_empty()
         {
-            return Err(Error::BucketNotEmpty(bucket.to_string()));
-        }
-        if !self.list_uploads(bucket).await?.is_empty() {
             return Err(Error::BucketNotEmpty(bucket.to_string()));
         }
 

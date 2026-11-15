@@ -296,9 +296,13 @@ mod multipart {
             .unwrap();
     }
 
-    /// An upload still in flight does block the delete, as it does on S3.
+    /// An upload still in flight does not block the delete.
+    ///
+    /// S3 conditions `DeleteBucket` on objects only, and clients delete a bucket's
+    /// objects and then the bucket without aborting uploads first — the ceph/s3-tests
+    /// cleanup among them. Refusing here strands the bucket for good.
     #[tokio::test]
-    async fn should_refuse_to_delete_a_bucket_with_an_upload_in_flight() {
+    async fn should_delete_a_bucket_with_an_upload_still_in_flight() {
         let h = harness_with_bucket().await;
         h.s3.create_multipart_upload()
             .bucket("my-bucket")
@@ -307,15 +311,21 @@ mod multipart {
             .await
             .unwrap();
 
+        h.s3.delete_bucket()
+            .bucket("my-bucket")
+            .send()
+            .await
+            .unwrap();
+
+        // Gone, along with the upload it was holding.
         let error =
-            h.s3.delete_bucket()
+            h.s3.list_multipart_uploads()
                 .bucket("my-bucket")
                 .send()
                 .await
                 .unwrap_err()
                 .into_service_error();
-
-        assert_eq!(error.code(), Some("BucketNotEmpty"));
+        assert_eq!(error.code(), Some("NoSuchBucket"));
     }
 
     #[tokio::test]
