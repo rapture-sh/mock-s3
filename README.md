@@ -20,16 +20,18 @@ rebuilt around a standalone protocol engine and extended well past the original 
 buckets per instance, multipart uploads, per-bucket fault injection and a console. Kywi
 now consumes it like everyone else.
 
-**Status: pre-release.** This describes the target shape of the first tagged release,
-not a finished product. The admin API will break without ceremony until `0.1.0`. See the
-[issues](https://github.com/rapture-sh/mock-s3/issues) for what is wired up today.
+**Status: pre-release.** Buckets and single-part objects work end to end against the AWS
+SDKs and the AWS CLI. Multipart uploads, `CopyObject`, `DeleteObjects`, fault injection
+and the web console are not built yet — see
+[Supported operations](#supported-operations). The admin API will break without ceremony
+until `0.1.0`.
 
 
 Running it
 ----------
 
 ```bash
-docker run --rm -p 9000:9000 -p 9001:9001 -v mock-s3-data:/data ghcr.io/rapture-sh/mock-s3:latest
+docker run --rm -p 9000:9000 -p 9001:9001 -v mock-s3-data:/data rapturesh/mock-s3:latest
 ```
 
 S3 API on `:9000`, web console on `:9001`. Objects live in the volume mounted at
@@ -38,7 +40,7 @@ S3 API on `:9000`, web console on `:9001`. Objects live in the volume mounted at
 ```yaml
 services:
   s3:
-    image: ghcr.io/rapture-sh/mock-s3:latest
+    image: rapturesh/mock-s3:latest
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -48,6 +50,8 @@ services:
 volumes:
   mock-s3-data:
 ```
+
+There is a ready-made [docker-compose.yml](docker-compose.yml) in this repository.
 
 Run without a volume and the container keeps its data in its own writable layer, which
 disappears with the container. For a suite that wants nothing on disk at all, pass
@@ -91,6 +95,38 @@ Every flag has a `MOCK_S3_`-prefixed environment variable equivalent, which is u
 easier in a compose file.
 
 
+Storage layout
+--------------
+
+The volume mirrors the key space, so it can be browsed, diffed and seeded by hand:
+
+```
+/data/buckets/<bucket>/bucket.json           when it was created
+/data/buckets/<bucket>/objects/<key>         the payload, at the key's own path
+/data/buckets/<bucket>/meta/<key>.json       content type, user metadata, etag
+```
+
+So `photos/2024/cat.jpg` in bucket `assets` is the file
+`/data/buckets/assets/objects/photos/2024/cat.jpg`. Open the volume and you are looking
+at your test fixtures as files.
+
+A payload dropped into `objects/` without a sidecar is still served — size, modification
+time and content type are worked out from the file itself — so a volume can be
+pre-seeded with assets before anything starts.
+
+Two consequences of mirroring, both deliberate:
+
+- A key cannot both hold data and act as a directory for other keys. `photos` and
+  `photos/cat.jpg` cannot coexist, and the second request is refused rather than
+  corrupting the first. Real S3 allows it; this is the cost of a browsable volume.
+- A key with an empty path segment (`a//b`) is refused for the same reason. A key ending
+  in `/`, which the AWS console creates as a folder marker, is stored as a marker file
+  inside that directory.
+
+Object keys are resolved into the data directory by one helper that rejects `../`,
+absolute paths and drive prefixes, so no key can write outside the volume.
+
+
 Architecture
 ------------
 
@@ -125,20 +161,29 @@ in-process on a random port.
 Supported operations
 --------------------
 
-| Level | Operations |
-| --- | --- |
-| Service | `ListBuckets` |
-| Bucket | `CreateBucket`, `DeleteBucket`, `HeadBucket`, `ListObjectsV2`, `ListObjects`, `GetBucketLocation`, `GetBucketVersioning` |
-| Object | `PutObject`, `GetObject`, `HeadObject`, `DeleteObject`, `DeleteObjects`, `CopyObject` |
-| Multipart | `CreateMultipartUpload`, `UploadPart`, `UploadPartCopy`, `CompleteMultipartUpload`, `AbortMultipartUpload`, `ListParts`, `ListMultipartUploads` |
+| Level | Operation | Status |
+| --- | --- | --- |
+| Service | `ListBuckets` | working |
+| Bucket | `CreateBucket`, `DeleteBucket`, `HeadBucket` | working |
+| Bucket | `ListObjectsV2`, `ListObjects` | working, with prefix, delimiter, `max-keys` and continuation tokens |
+| Bucket | `GetBucketLocation`, `GetBucketVersioning` | working |
+| Bucket | `DeleteObjects` | planned |
+| Object | `PutObject`, `GetObject`, `HeadObject`, `DeleteObject` | working |
+| Object | `GetObject` with a single `Range` | working |
+| Object | `CopyObject` | planned |
+| Multipart | `CreateMultipartUpload` … `CompleteMultipartUpload` | planned |
 
-Multipart is not optional: SDKs switch to it automatically above a size threshold with no
-change in caller code, so a mock without it fails the first time somebody uploads a large
-file.
+Anything marked planned answers with `501 NotImplemented` rather than pretending to
+succeed, so a test that needs it fails loudly instead of passing against a lie.
 
-Range and conditional requests, user metadata and content type round-tripping are part of
-the target surface, and bucket name validation follows the real rules so invalid names
-fail here instead of passing locally and failing against AWS.
+Multipart is the most important of those: SDKs switch to it automatically above a size
+threshold with no change in caller code, so until it lands, uploading a large file through
+an SDK will fail.
+
+Working today alongside the operations: user metadata round-tripping through
+`x-amz-meta-*`, content type preservation, MD5 ETags, and bucket name validation that
+follows the real rules so an invalid name fails here instead of passing locally and
+failing against AWS.
 
 Out of scope: IAM and real signature verification, replication, lifecycle transitions,
 storage classes beyond `STANDARD`, and anything whose only honest implementation is

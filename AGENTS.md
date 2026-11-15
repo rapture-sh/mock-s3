@@ -15,10 +15,14 @@ can be hosted.
 
 It is part of [Rapture.sh](https://rapture.sh) and is MIT licensed.
 
-**Status: pre-implementation.** The crates described below are being built out. This
-file is the contract new code has to meet, not a description of code that already
-exists. Where it names a reference implementation that has not landed yet, follow the
-steps literally instead.
+**Status: partly implemented.** Buckets and single-part objects work end to end, with
+listings, ranges, user metadata and MD5 ETags. Multipart, `CopyObject`, `DeleteObjects`,
+fault injection and the console frontend are not built, and `mock-s3-testkit` and
+`conformance` do not exist as crates yet. Where this file names something that has not
+landed, it is the contract for building it rather than a description of code you can
+read — so check that a file is there before assuming it.
+
+Published images go to Docker Hub as `rapturesh/mock-s3`.
 
 ## The rules that matter
 
@@ -53,9 +57,10 @@ steps literally instead.
 
 ## Stack
 
-- Rust, edition 2021, version pinned in `rust-toolchain.toml`
+- Rust, edition 2024, version pinned in `rust-toolchain.toml`
 - `tokio` + `axum` + `hyper` for the HTTP surface
-- `bytes` for object payloads, `quick-xml` for the S3 wire format
+- `bytes` for object payloads; the S3 XML is written by hand in `mock-s3-proto::xml`,
+  which is the only module allowed to produce it, so the exact shapes stay in one place
 - `clap` for the CLI, `tracing` for logs
 - `thiserror` for typed errors
 - `rust-embed` for the console assets
@@ -118,12 +123,26 @@ crates/
     src/cli.rs               clap definitions
     src/main.rs              listener wiring
 
-  mock-s3-testkit/           spawn an in-process instance from a Rust test
-  conformance/               integration tests driven by the real aws-sdk-s3
+  mock-s3-testkit/           not created yet: in-process instance for a Rust test
+  conformance/               not created yet: tests driven by the real aws-sdk-s3
 
-web/                         the console. Vite, React, TypeScript.
+web/                         not created yet: the console. Vite, React, TypeScript.
 xtask/                       build orchestration
 ```
+
+The data volume mirrors the key space, so it can be browsed and seeded by hand:
+
+```
+<data>/buckets/<bucket>/bucket.json        when it was created
+<data>/buckets/<bucket>/objects/<key>      the payload, at the key's own path
+<data>/buckets/<bucket>/meta/<key>.json    content type, user metadata, etag
+```
+
+Two consequences, both deliberate and both documented in the README: a key cannot both
+hold data and act as a directory for other keys, and a key with an empty path segment
+cannot be stored. Both are refused rather than silently mangled. A payload with no
+sidecar is still served, with its metadata synthesised from the file, which is what makes
+seeding a volume work — do not break that.
 
 Where things go:
 
@@ -185,14 +204,15 @@ when you need it, build it there rather than inline in a handler.
   opt-out, so every operation has to work on both. New storage behaviour is a method
   here, not a branch on the backend type. Key-to-path resolution lives here too, and is
   the only place allowed to turn an object key into a filesystem path.
-- `core::fault` — fault rules are consulted once per request, early, before any work.
-  An operation that does not check them cannot be tested for retry behaviour.
+- `core::fault` — not built yet. Fault rules will be consulted once per request, early,
+  before any work. An operation that does not check them cannot be tested for retry
+  behaviour.
 - `proto::error` — the one place engine errors become S3 error codes. A handler never
   writes an error body itself.
 - `proto::xml` — the serialisation types. S3 responses are not ad-hoc strings; never
   format XML by hand in a handler.
-- `testkit` — spawns an in-process instance on a random port. Rust tests use it instead
-  of shelling out to a container.
+- `testkit` — not built yet. It will spawn an in-process instance on a random port, so
+  Rust tests do not shell out to a container.
 
 One rule comes with them: **object payloads are `bytes::Bytes`, never `Vec<u8>`.**
 Cloning `Bytes` bumps a refcount, so serving one object to many readers copies nothing.

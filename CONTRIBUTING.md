@@ -96,8 +96,10 @@ time and binary size are features. A dependency needs to earn its place in the
 PR description — what it does, why the standard library or an existing dependency
 cannot, and what it costs in compile time.
 
-`tokio`, `axum`, `bytes`, `quick-xml`, `clap` and `tracing` are settled. Adding
-another async runtime or HTTP stack is not a PR, it is a discussion.
+`tokio`, `axum`, `bytes`, `clap`, `chrono` and `tracing` are settled. Adding another
+async runtime or HTTP stack is not a PR, it is a discussion. The S3 XML is written by
+hand in `mock-s3-proto::xml` rather than through a serialisation crate, so the output
+matches S3 exactly; adding an XML serialiser needs a reason beyond tidiness.
 
 ## Checks
 
