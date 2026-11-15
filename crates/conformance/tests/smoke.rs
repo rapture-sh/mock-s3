@@ -373,4 +373,63 @@ mod listing {
         assert_eq!(listed.key_count(), Some(0));
         assert!(listed.contents().is_empty());
     }
+
+    /// The continuation token travels back as a query parameter, where `+` means space.
+    /// A token that is just the last key would resume from the wrong place for these.
+    #[tokio::test]
+    async fn should_paginate_through_keys_containing_a_plus() {
+        let h = harness_with_keys(&["a+1", "a+2", "a+3"]).await;
+
+        let mut seen: Vec<String> = Vec::new();
+        let mut token: Option<String> = None;
+        loop {
+            let page =
+                h.s3.list_objects_v2()
+                    .bucket("my-bucket")
+                    .max_keys(1)
+                    .set_continuation_token(token.clone())
+                    .send()
+                    .await
+                    .unwrap();
+
+            seen.extend(
+                page.contents()
+                    .iter()
+                    .filter_map(|o| o.key())
+                    .map(String::from),
+            );
+
+            if page.is_truncated() == Some(true) {
+                token = page.next_continuation_token().map(String::from);
+            } else {
+                break;
+            }
+        }
+
+        assert_eq!(seen, vec!["a+1", "a+2", "a+3"]);
+    }
+
+    #[tokio::test]
+    async fn should_round_trip_keys_when_url_encoding_is_requested() {
+        let h = harness_with_keys(&["a b+c.txt", "100%.txt"]).await;
+
+        let listed =
+            h.s3.list_objects_v2()
+                .bucket("my-bucket")
+                .encoding_type(aws_sdk_s3::types::EncodingType::Url)
+                .send()
+                .await
+                .unwrap();
+
+        // The Rust SDK does not decode for you — it hands back exactly what the wire
+        // carried, same as against real S3 — so what matters is that the request was
+        // honoured and the encoding is right. `+` must come back as %2B, which is the
+        // whole point: a client cannot otherwise tell it from a space.
+        let keys: Vec<&str> = listed.contents().iter().filter_map(|o| o.key()).collect();
+        assert_eq!(keys, vec!["100%25.txt", "a%20b%2Bc.txt"]);
+        assert_eq!(
+            listed.encoding_type(),
+            Some(&aws_sdk_s3::types::EncodingType::Url)
+        );
+    }
 }

@@ -95,16 +95,45 @@ pub struct ListingEcho<'a> {
     pub max_keys: usize,
     pub continuation_token: Option<&'a str>,
     pub start_after: Option<&'a str>,
+    /// `encoding-type`, as the caller sent it. `url` means keys come back
+    /// percent-encoded, which is the only way a client can tell a key containing `+`
+    /// from one containing a space.
+    pub encoding_type: Option<&'a str>,
     /// `list-type=2` responses carry `KeyCount` and continuation tokens; version 1
     /// responses carry `Marker` instead.
     pub v2: bool,
+}
+
+/// Everything outside the unreserved set, which is how S3 encodes a key.
+const URL_ENCODE_SET: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'~');
+
+fn wants_url_encoding(encoding_type: Option<&str>) -> bool {
+    encoding_type.is_some_and(|value| value.eq_ignore_ascii_case("url"))
+}
+
+/// A key, prefix or delimiter on its way into a listing response.
+fn listing_value(value: &str, encoding_type: Option<&str>) -> String {
+    if wants_url_encoding(encoding_type) {
+        let encoded = percent_encoding::utf8_percent_encode(value, URL_ENCODE_SET).to_string();
+        escape(&encoded)
+    } else {
+        escape(value)
+    }
 }
 
 pub fn list_bucket_result(echo: &ListingEcho<'_>, result: &ListResult) -> String {
     let mut out = String::new();
     let _ = write!(out, "{DECLARATION}<ListBucketResult xmlns=\"{NAMESPACE}\">");
     let _ = write!(out, "<Name>{}</Name>", escape(echo.bucket));
-    let _ = write!(out, "<Prefix>{}</Prefix>", escape(echo.prefix));
+    let _ = write!(
+        out,
+        "<Prefix>{}</Prefix>",
+        listing_value(echo.prefix, echo.encoding_type)
+    );
     let _ = write!(out, "<MaxKeys>{}</MaxKeys>", echo.max_keys);
     let _ = write!(
         out,
@@ -112,7 +141,14 @@ pub fn list_bucket_result(echo: &ListingEcho<'_>, result: &ListResult) -> String
         if result.is_truncated { "true" } else { "false" }
     );
     if let Some(delimiter) = echo.delimiter {
-        let _ = write!(out, "<Delimiter>{}</Delimiter>", escape(delimiter));
+        let _ = write!(
+            out,
+            "<Delimiter>{}</Delimiter>",
+            listing_value(delimiter, echo.encoding_type)
+        );
+    }
+    if wants_url_encoding(echo.encoding_type) {
+        out.push_str("<EncodingType>url</EncodingType>");
     }
 
     if echo.v2 {
@@ -124,30 +160,46 @@ pub fn list_bucket_result(echo: &ListingEcho<'_>, result: &ListResult) -> String
                 escape(token)
             );
         }
-        if let Some(token) = &result.next_continuation_token {
+        // The engine paginates on a key; the wire gets an opaque token, so a key
+        // containing `+` survives the round trip through a query string.
+        if let Some(cursor) = &result.next_continuation_token {
             let _ = write!(
                 out,
                 "<NextContinuationToken>{}</NextContinuationToken>",
-                escape(token)
+                escape(&crate::token::encode(cursor))
             );
         }
         if let Some(start_after) = echo.start_after {
-            let _ = write!(out, "<StartAfter>{}</StartAfter>", escape(start_after));
+            let _ = write!(
+                out,
+                "<StartAfter>{}</StartAfter>",
+                listing_value(start_after, echo.encoding_type)
+            );
         }
     } else {
         let _ = write!(
             out,
             "<Marker>{}</Marker>",
-            escape(echo.start_after.unwrap_or_default())
+            listing_value(echo.start_after.unwrap_or_default(), echo.encoding_type)
         );
-        if let Some(token) = &result.next_continuation_token {
-            let _ = write!(out, "<NextMarker>{}</NextMarker>", escape(token));
+        // Version 1 pagination resumes from NextMarker, which is a key rather than an
+        // opaque token, so it is encoded the same way as any other key.
+        if let Some(cursor) = &result.next_continuation_token {
+            let _ = write!(
+                out,
+                "<NextMarker>{}</NextMarker>",
+                listing_value(cursor, echo.encoding_type)
+            );
         }
     }
 
     for object in &result.objects {
         let _ = write!(out, "<Contents>");
-        let _ = write!(out, "<Key>{}</Key>", escape(&object.key));
+        let _ = write!(
+            out,
+            "<Key>{}</Key>",
+            listing_value(&object.key, echo.encoding_type)
+        );
         let _ = write!(
             out,
             "<LastModified>{}</LastModified>",
@@ -167,7 +219,7 @@ pub fn list_bucket_result(echo: &ListingEcho<'_>, result: &ListResult) -> String
         let _ = write!(
             out,
             "<CommonPrefixes><Prefix>{}</Prefix></CommonPrefixes>",
-            escape(prefix)
+            listing_value(prefix, echo.encoding_type)
         );
     }
 
@@ -263,8 +315,76 @@ mod tests {
                 max_keys: 1000,
                 continuation_token: None,
                 start_after: None,
+                encoding_type: None,
                 v2: true,
             }
+        }
+
+        #[test]
+        fn should_leave_keys_unencoded_when_no_encoding_type_is_asked_for() {
+            let result = ListResult {
+                objects: vec![object("a b+c.txt")],
+                key_count: 1,
+                ..Default::default()
+            };
+
+            let body = list_bucket_result(&echo("b"), &result);
+
+            assert!(body.contains("<Key>a b+c.txt</Key>"));
+            assert!(!body.contains("<EncodingType>"));
+        }
+
+        #[test]
+        fn should_percent_encode_keys_when_encoding_type_is_url() {
+            let mut echo = echo("b");
+            echo.encoding_type = Some("url");
+            let result = ListResult {
+                objects: vec![object("a b+c.txt")],
+                key_count: 1,
+                ..Default::default()
+            };
+
+            let body = list_bucket_result(&echo, &result);
+
+            // Without this a client cannot tell a key holding `+` from one holding a
+            // space, because it percent-decodes whatever it is given.
+            assert!(body.contains("<Key>a%20b%2Bc.txt</Key>"));
+            assert!(body.contains("<EncodingType>url</EncodingType>"));
+        }
+
+        #[test]
+        fn should_percent_encode_the_delimiter_and_common_prefixes_too() {
+            let mut echo = echo("b");
+            echo.encoding_type = Some("url");
+            echo.delimiter = Some("/");
+            let result = ListResult {
+                common_prefixes: vec!["a b/".into()],
+                key_count: 1,
+                ..Default::default()
+            };
+
+            let body = list_bucket_result(&echo, &result);
+
+            assert!(body.contains("<Delimiter>%2F</Delimiter>"));
+            assert!(body.contains("<Prefix>a%20b%2F</Prefix>"));
+        }
+
+        #[test]
+        fn should_hand_out_an_opaque_next_continuation_token() {
+            let result = ListResult {
+                is_truncated: true,
+                next_continuation_token: Some("a+b".into()),
+                key_count: 1,
+                ..Default::default()
+            };
+
+            let body = list_bucket_result(&echo("b"), &result);
+
+            let encoded = crate::token::encode("a+b");
+            assert!(body.contains(&format!(
+                "<NextContinuationToken>{encoded}</NextContinuationToken>"
+            )));
+            assert!(!body.contains("<NextContinuationToken>a+b<"));
         }
 
         fn object(key: &str) -> ObjectMeta {

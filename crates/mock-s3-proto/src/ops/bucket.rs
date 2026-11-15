@@ -86,6 +86,15 @@ pub async fn get(
         None => mock_s3_core::listing::MAX_KEYS_LIMIT,
     };
 
+    // Echoed back as the client sent it, while the engine gets the cursor inside it.
+    let sent_token = query.non_empty("continuation-token");
+    let cursor = match (v2, sent_token) {
+        (true, Some(raw)) => Some(crate::token::decode(raw).ok_or_else(|| {
+            S3Error::invalid_argument(format!("continuation-token is not valid: {raw}"))
+        })?),
+        _ => None,
+    };
+
     let request = ListRequest {
         prefix: query.get("prefix").unwrap_or_default().to_string(),
         delimiter: query.non_empty("delimiter").map(str::to_string),
@@ -95,11 +104,7 @@ pub async fn get(
         } else {
             query.non_empty("marker").map(str::to_string)
         },
-        continuation_token: if v2 {
-            query.non_empty("continuation-token").map(str::to_string)
-        } else {
-            None
-        },
+        continuation_token: cursor,
     };
 
     let result = engine.list_objects(&bucket, &request).await?;
@@ -109,8 +114,9 @@ pub async fn get(
         prefix: &request.prefix,
         delimiter: request.delimiter.as_deref(),
         max_keys: request.max_keys,
-        continuation_token: request.continuation_token.as_deref(),
+        continuation_token: sent_token,
         start_after: request.start_after.as_deref(),
+        encoding_type: query.non_empty("encoding-type"),
         v2,
     };
     Ok(response::xml(

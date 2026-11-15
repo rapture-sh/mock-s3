@@ -1647,6 +1647,7 @@ dependencies = [
  "axum",
  "bytes",
  "chrono",
+ "hex",
  "http 1.5.0",
  "mock-s3-core",
  "percent-encoding",
