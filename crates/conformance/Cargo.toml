@@ -1,0 +1,18 @@
+[package]
+name = "conformance"
+description = "Conformance tests for mock-s3, driven by the real AWS SDK."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+mock-s3-testkit = { workspace = true }
+
+aws-sdk-s3 = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }

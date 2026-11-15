@@ -1,0 +1,20 @@
+[package]
+name = "mock-s3-testkit"
+description = "Spawn a mock-s3 instance in-process, for Rust tests."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+mock-s3-console = { workspace = true }
+mock-s3-core = { workspace = true }
+mock-s3-proto = { workspace = true }
+
+axum = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }
