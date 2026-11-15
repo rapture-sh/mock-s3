@@ -1,0 +1,17 @@
+[package]
+name = "mock-s3-console"
+description = "Admin API and embedded web console for mock-s3."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+mock-s3-core = { workspace = true }
+mock-s3-proto = { workspace = true }
+
+axum = { workspace = true }
+http = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }

@@ -1,0 +1,24 @@
+[package]
+name = "mock-s3"
+description = "An S3-compatible object storage server for local development and testing."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "mock-s3"
+path = "src/main.rs"
+
+[dependencies]
+mock-s3-console = { workspace = true }
+mock-s3-core = { workspace = true }
+mock-s3-proto = { workspace = true }
+
+anyhow = { workspace = true }
+axum = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
