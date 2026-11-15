@@ -54,17 +54,21 @@ echo "==> running ${pytest_args[*]}"
 output="$(mktemp)"
 # pytest exits non-zero whenever anything failed, which is the normal case here, so its
 # status is not the signal — the comparison below is.
-"${compose[@]}" run --rm s3-tests -q --tb=no -rf "${pytest_args[@]}" \
+"${compose[@]}" run --rm s3-tests -q --tb=no -rfE "${pytest_args[@]}" \
   | tee "$output" || true
 
-# `-rf` prints one `FAILED <nodeid>` line per failure in the short summary.
+# `-rfE` puts a `FAILED` or `ERROR` line in the short summary for each one. Without the
+# E, setup and teardown errors are invisible here and would not count as regressions.
 actual="$(mktemp)"
-grep -E '^(FAILED|ERROR) ' "$output" \
+# grep exits 1 when it matches nothing, which under `set -e` would abort the script on
+# the very outcome this is working towards: a run with no failures at all.
+{ grep -E '^(FAILED|ERROR) ' "$output" || true; } \
   | sed -E 's/^(FAILED|ERROR) //; s/ - .*$//' \
   | sort -u > "$actual"
 
 expected="$(mktemp)"
-grep -vE '^\s*(#|$)' "$known" | sort -u > "$expected"
+# Same again: a known-failures file that is only comments matches nothing.
+{ grep -vE '^\s*(#|$)' "$known" || true; } | sort -u > "$expected"
 
 printf '\n==> %s failing, %s expected to fail\n' \
   "$(wc -l < "$actual")" "$(wc -l < "$expected")"
