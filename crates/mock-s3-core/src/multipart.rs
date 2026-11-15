@@ -283,9 +283,10 @@ impl Engine {
             etag: Some(multipart_etag(&etags)),
             ..manifest.options
         };
+        // Through the engine rather than the store, so completing an upload into a
+        // versioned bucket stores a version like any other write.
         let meta = self
-            .store
-            .put_object(bucket, &manifest.key, assembled.freeze(), options)
+            .put_object_version(bucket, &manifest.key, assembled.freeze(), options)
             .await?;
 
         // Parts and the manifest go first; the record of what was produced is written

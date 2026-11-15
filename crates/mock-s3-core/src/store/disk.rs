@@ -145,6 +145,7 @@ impl DiskStore {
                     last_modified: record.last_modified,
                     content_type: record.content_type,
                     user_metadata: record.user_metadata,
+                    version_id: None,
                     system_headers: record.system_headers,
                 });
             }
@@ -162,6 +163,7 @@ impl DiskStore {
                 .unwrap_or_else(|_| Utc::now()),
             content_type: guess_content_type(key).to_string(),
             user_metadata: BTreeMap::new(),
+            version_id: None,
             system_headers: BTreeMap::new(),
         })
     }
@@ -279,6 +281,7 @@ impl Store for DiskStore {
             last_modified: Utc::now(),
             content_type: options.content_type,
             user_metadata: options.user_metadata,
+            version_id: None,
             system_headers: options.system_headers,
         };
 

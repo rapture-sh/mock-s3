@@ -91,6 +91,7 @@ impl Store for MemoryStore {
             last_modified: Utc::now(),
             content_type: options.content_type,
             user_metadata: options.user_metadata,
+            version_id: None,
             system_headers: options.system_headers,
         };
         entry.objects.insert(key.to_string(), (meta.clone(), body));

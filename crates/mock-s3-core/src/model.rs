@@ -28,6 +28,15 @@ pub struct ObjectMeta {
     pub content_type: String,
     #[serde(default)]
     pub user_metadata: BTreeMap<String, String>,
+    /// Which version of the key this is, or `None` in a bucket that has never had
+    /// versioning enabled.
+    ///
+    /// A [`Store`](crate::Store) never sets this: a backend holds one object per key and
+    /// knows nothing about versions. It is filled in by the versioning layer in the
+    /// engine, which is also what translates a version's hidden storage key back into
+    /// the key a client asked for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version_id: Option<String>,
     /// Headers S3 keeps with an object and hands back on the way out: cache control,
     /// content disposition, storage class, server-side encryption, checksums.
     ///

@@ -19,6 +19,20 @@ pub enum Error {
     #[error("no such key: {0}")]
     NoSuchKey(String),
 
+    #[error("no version {version_id} of {key}")]
+    NoSuchVersion { key: String, version_id: String },
+
+    /// The current version of the key is a delete marker, so the key reads as absent
+    /// even though its earlier versions are still there.
+    #[error("the current version of {key} is a delete marker")]
+    DeleteMarker { key: String, version_id: String },
+
+    /// A version id was named and it turned out to be a delete marker. S3 separates this
+    /// from the case above: a marker reached as the current version is a 404, while one
+    /// named outright is a 405, because the only thing you may do to it is delete it.
+    #[error("version {version_id} of {key} is a delete marker")]
+    DeleteMarkerVersion { key: String, version_id: String },
+
     #[error("invalid bucket name: {0}")]
     InvalidBucketName(String),
 
