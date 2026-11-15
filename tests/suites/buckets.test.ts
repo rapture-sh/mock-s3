@@ -7,7 +7,23 @@ import {
 } from "@aws-sdk/client-s3";
 import { describe, expect, it } from "vitest";
 
-import { createBucket, errorCode, s3, uniqueBucket } from "../support/s3";
+import { createBucket, endpoint, errorCode, s3, uniqueBucket } from "../support/s3";
+
+describe("an unhandled method", () => {
+  it("should answer with an S3 error rather than an empty body", async () => {
+    const bucket = await createBucket("method");
+
+    // A bare 405 with no body makes a client report "invalid XML received", which says
+    // nothing about what went wrong.
+    const response = await fetch(`${endpoint}/${bucket}`, { method: "PATCH" });
+    const body = await response.text();
+
+    expect(response.status).toBe(501);
+    expect(response.headers.get("content-type")).toBe("application/xml");
+    expect(body).toContain("<Code>NotImplemented</Code>");
+    expect(body).toContain("PATCH");
+  });
+});
 
 describe("CreateBucket", () => {
   it("should create a bucket and then list it", async () => {

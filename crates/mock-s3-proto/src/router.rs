@@ -42,8 +42,11 @@ pub fn router(engine: Arc<Engine>, config: ProtoConfig) -> Router {
     // bucket's configuration.
     let engine_for_cors = engine.clone();
 
+    // Every method router gets the same fallback. Without it, a method the route does
+    // not handle gets the framework's bare `405` with an empty body, and a client that
+    // expects XML reports "invalid XML received" rather than anything it can act on.
     let routes = Router::new()
-        .route("/", get(ops::service::list_buckets))
+        .route("/", get(ops::service::list_buckets).fallback(unmatched))
         .route(
             "/:bucket",
             put(ops::bucket::create)
@@ -51,7 +54,8 @@ pub fn router(engine: Arc<Engine>, config: ProtoConfig) -> Router {
                 .head(ops::bucket::head)
                 .delete(ops::bucket::delete)
                 .post(ops::bucket::post)
-                .options(ops::bucket::options),
+                .options(ops::bucket::options)
+                .fallback(unmatched),
         )
         .route(
             "/:bucket/*key",
@@ -60,7 +64,8 @@ pub fn router(engine: Arc<Engine>, config: ProtoConfig) -> Router {
                 .head(ops::object::head)
                 .delete(ops::object::delete)
                 .post(ops::object::post)
-                .options(ops::object::options),
+                .options(ops::object::options)
+                .fallback(unmatched),
         )
         .fallback(unmatched)
         // The framework caps request bodies at 2 MB by default, which answers any
@@ -314,7 +319,7 @@ async fn normalize_bucket_path(mut request: Request, next: Next) -> Response {
     next.run(request).await
 }
 
-/// Anything the route table does not cover.
+/// Anything the route table does not cover, by path or by method.
 ///
 /// Without this the framework answers with a bare `404` and an empty body, which a client
 /// reports as a missing object and which tells whoever is debugging nothing. An S3 error
