@@ -294,6 +294,12 @@ pub fn list_versions_result(echo: &ListingEcho<'_>, result: &ListResult) -> Stri
             "<NextKeyMarker>{}</NextKeyMarker>",
             listing_value(cursor, echo.encoding_type)
         );
+        // Both markers or neither. A client paginating this listing feeds both back
+        // into the next call, so omitting this one makes the second page impossible to
+        // ask for — and a client that validates its own parameters fails before it even
+        // sends the request. `null` is the version id of an object in an unversioned
+        // bucket, which is every object here.
+        out.push_str("<NextVersionIdMarker>null</NextVersionIdMarker>");
     }
 
     for object in &result.objects {

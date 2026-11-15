@@ -409,6 +409,61 @@ mod listing {
         assert_eq!(seen, vec!["a+1", "a+2", "a+3"]);
     }
 
+    /// Paginating a versions listing needs both markers back. A client that validates
+    /// its own parameters cannot even send the second request without the version
+    /// marker, so a truncated page that omits it is a dead end.
+    #[tokio::test]
+    async fn should_paginate_a_versions_listing() {
+        let h = harness_with_keys(&["a", "b", "c"]).await;
+
+        let first =
+            h.s3.list_object_versions()
+                .bucket("my-bucket")
+                .max_keys(2)
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(first.is_truncated(), Some(true));
+        assert!(first.next_key_marker().is_some());
+        assert!(
+            first.next_version_id_marker().is_some(),
+            "a truncated versions page must carry NextVersionIdMarker"
+        );
+
+        let second =
+            h.s3.list_object_versions()
+                .bucket("my-bucket")
+                .max_keys(2)
+                .key_marker(first.next_key_marker().unwrap())
+                .version_id_marker(first.next_version_id_marker().unwrap())
+                .send()
+                .await
+                .unwrap();
+
+        let keys: Vec<&str> = second.versions().iter().filter_map(|v| v.key()).collect();
+        assert_eq!(keys, vec!["c"]);
+        assert_eq!(second.is_truncated(), Some(false));
+    }
+
+    #[tokio::test]
+    async fn should_report_every_object_as_its_own_latest_version() {
+        let h = harness_with_keys(&["a", "b"]).await;
+
+        let listed =
+            h.s3.list_object_versions()
+                .bucket("my-bucket")
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(listed.versions().len(), 2);
+        for version in listed.versions() {
+            assert_eq!(version.version_id(), Some("null"));
+            assert_eq!(version.is_latest(), Some(true));
+        }
+    }
+
     /// A nested key keeps its separators under `encoding-type=url`, and so does the
     /// echoed prefix. S3 does not encode `/`, and a client that lists with a prefix sees
     /// that element without decoding it.
