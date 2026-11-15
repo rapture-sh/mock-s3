@@ -237,6 +237,92 @@ pub fn location_constraint(region: &str) -> String {
     )
 }
 
+/// `ListObjectVersions`, for a bucket that has no versioning.
+///
+/// Every object is reported as its own single version, with `VersionId` of `null` and
+/// `IsLatest` true, which is exactly what S3 returns for an unversioned bucket.
+///
+/// This is not cosmetic. Clients use `?versions` to enumerate a bucket before deleting
+/// it — the ceph/s3-tests cleanup does — and answering with a `ListBucketResult` instead
+/// parses as *no objects*, so the caller deletes nothing and then cannot delete the
+/// bucket. Returning the wrong document is worse than returning an error.
+pub fn list_versions_result(echo: &ListingEcho<'_>, result: &ListResult) -> String {
+    let mut out = String::new();
+    let _ = write!(
+        out,
+        "{DECLARATION}<ListVersionsResult xmlns=\"{NAMESPACE}\">"
+    );
+    let _ = write!(out, "<Name>{}</Name>", escape(echo.bucket));
+    let _ = write!(
+        out,
+        "<Prefix>{}</Prefix>",
+        listing_value(echo.prefix, echo.encoding_type)
+    );
+    let _ = write!(
+        out,
+        "<KeyMarker>{}</KeyMarker>",
+        listing_value(echo.start_after.unwrap_or_default(), echo.encoding_type)
+    );
+    out.push_str("<VersionIdMarker></VersionIdMarker>");
+    let _ = write!(out, "<MaxKeys>{}</MaxKeys>", echo.max_keys);
+    let _ = write!(
+        out,
+        "<IsTruncated>{}</IsTruncated>",
+        if result.is_truncated { "true" } else { "false" }
+    );
+    if let Some(delimiter) = echo.delimiter {
+        let _ = write!(
+            out,
+            "<Delimiter>{}</Delimiter>",
+            listing_value(delimiter, echo.encoding_type)
+        );
+    }
+    if wants_url_encoding(echo.encoding_type) {
+        out.push_str("<EncodingType>url</EncodingType>");
+    }
+    if let Some(cursor) = &result.next_continuation_token {
+        let _ = write!(
+            out,
+            "<NextKeyMarker>{}</NextKeyMarker>",
+            listing_value(cursor, echo.encoding_type)
+        );
+    }
+
+    for object in &result.objects {
+        out.push_str("<Version>");
+        let _ = write!(
+            out,
+            "<Key>{}</Key>",
+            listing_value(&object.key, echo.encoding_type)
+        );
+        out.push_str("<VersionId>null</VersionId><IsLatest>true</IsLatest>");
+        let _ = write!(
+            out,
+            "<LastModified>{}</LastModified>",
+            xml_timestamp(&object.last_modified)
+        );
+        let _ = write!(out, "<ETag>&quot;{}&quot;</ETag>", escape(&object.etag));
+        let _ = write!(out, "<Size>{}</Size>", object.size);
+        out.push_str("<StorageClass>STANDARD</StorageClass>");
+        let _ = write!(
+            out,
+            "<Owner><ID>{OWNER_ID}</ID><DisplayName>{OWNER_DISPLAY_NAME}</DisplayName></Owner>"
+        );
+        out.push_str("</Version>");
+    }
+
+    for prefix in &result.common_prefixes {
+        let _ = write!(
+            out,
+            "<CommonPrefixes><Prefix>{}</Prefix></CommonPrefixes>",
+            listing_value(prefix, echo.encoding_type)
+        );
+    }
+
+    out.push_str("</ListVersionsResult>");
+    out
+}
+
 pub fn copy_object_result(etag: &str, last_modified: &DateTime<Utc>) -> String {
     format!(
         "{DECLARATION}<CopyObjectResult xmlns=\"{NAMESPACE}\">\

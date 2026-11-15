@@ -262,6 +262,7 @@ pub async fn get(
         return Ok(answer);
     }
 
+    let versions = query.has("versions");
     let v2 = query.get("list-type") == Some("2");
 
     let max_keys = match query.non_empty("max-keys") {
@@ -284,7 +285,9 @@ pub async fn get(
         prefix: query.get("prefix").unwrap_or_default().to_string(),
         delimiter: query.non_empty("delimiter").map(str::to_string),
         max_keys,
-        start_after: if v2 {
+        start_after: if versions {
+            query.non_empty("key-marker").map(str::to_string)
+        } else if v2 {
             query.non_empty("start-after").map(str::to_string)
         } else {
             query.non_empty("marker").map(str::to_string)
@@ -304,10 +307,12 @@ pub async fn get(
         encoding_type: query.non_empty("encoding-type"),
         v2,
     };
-    Ok(response::xml(
-        StatusCode::OK,
-        xml::list_bucket_result(&echo, &result),
-    ))
+    let body = if versions {
+        xml::list_versions_result(&echo, &result)
+    } else {
+        xml::list_bucket_result(&echo, &result)
+    };
+    Ok(response::xml(StatusCode::OK, body))
 }
 
 /// `POST /{bucket}` — DeleteObjects and the other bucket-level posts.
