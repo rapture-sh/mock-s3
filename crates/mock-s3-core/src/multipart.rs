@@ -74,6 +74,16 @@ fn manifest_key(upload_id: &str) -> String {
     format!("{}manifest.json", upload_root(upload_id))
 }
 
+/// What a finished upload produced.
+///
+/// Kept after the parts are gone so that completing the same upload twice returns the
+/// same answer. `CompleteMultipartUpload` can time out on a client that then retries it,
+/// and S3 answers the retry rather than reporting the upload missing — a mock that
+/// 404s instead turns a successful upload into a failed one.
+fn completed_key(upload_id: &str) -> String {
+    format!("{}completed.json", upload_root(upload_id))
+}
+
 /// Parts are named so that a plain sorted listing is already in part order.
 fn part_key(upload_id: &str, number: u32) -> String {
     format!("{}part-{number:05}", upload_root(upload_id))
@@ -218,6 +228,11 @@ impl Engine {
         upload_id: &str,
         parts: &[(u32, String)],
     ) -> Result<ObjectMeta> {
+        // A retry of a completed upload gets the original answer.
+        if let Some(already) = self.load_completed(bucket, upload_id).await? {
+            return Ok(already);
+        }
+
         let manifest = self.load_manifest(bucket, upload_id).await?;
 
         if parts.is_empty() {
@@ -273,8 +288,45 @@ impl Engine {
             .put_object(bucket, &manifest.key, assembled.freeze(), options)
             .await?;
 
+        // Parts and the manifest go first; the record of what was produced is written
+        // afterwards, so the cleanup does not sweep it away.
         self.discard_upload(bucket, upload_id).await?;
+        self.record_completed(bucket, upload_id, &meta).await?;
+
         Ok(meta)
+    }
+
+    async fn load_completed(&self, bucket: &str, upload_id: &str) -> Result<Option<ObjectMeta>> {
+        match self
+            .store
+            .get_object(bucket, &completed_key(upload_id))
+            .await
+        {
+            Ok(data) => Ok(serde_json::from_slice(&data.body).ok()),
+            Err(Error::NoSuchKey(_)) => Ok(None),
+            Err(Error::NoSuchBucket(_)) => Ok(None),
+            Err(other) => Err(other),
+        }
+    }
+
+    async fn record_completed(
+        &self,
+        bucket: &str,
+        upload_id: &str,
+        meta: &ObjectMeta,
+    ) -> Result<()> {
+        let encoded =
+            serde_json::to_vec(meta).map_err(|error| Error::InvalidArgument(error.to_string()))?;
+
+        self.store
+            .put_object(
+                bucket,
+                &completed_key(upload_id),
+                encoded.into(),
+                PutOptions::with_content_type("application/json"),
+            )
+            .await?;
+        Ok(())
     }
 
     /// The key an upload will land on, which `CompleteMultipartUpload` has to report.

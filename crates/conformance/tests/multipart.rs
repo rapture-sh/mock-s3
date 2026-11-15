@@ -192,6 +192,132 @@ mod multipart {
         assert_eq!(error.code(), Some("EntityTooSmall"));
     }
 
+    /// Clients retry this call when it times out, and S3 answers the retry rather than
+    /// reporting the upload gone. A 404 here turns a successful upload into a failure.
+    #[tokio::test]
+    async fn should_answer_a_repeated_complete_with_the_same_result() {
+        let h = harness_with_bucket().await;
+        let created =
+            h.s3.create_multipart_upload()
+                .bucket("my-bucket")
+                .key("retried")
+                .send()
+                .await
+                .unwrap();
+        let upload_id = created.upload_id().unwrap().to_string();
+
+        let part =
+            h.s3.upload_part()
+                .bucket("my-bucket")
+                .key("retried")
+                .upload_id(&upload_id)
+                .part_number(1)
+                .body(ByteStream::from(filler(256, b'x')))
+                .send()
+                .await
+                .unwrap();
+        let completed = CompletedMultipartUpload::builder()
+            .parts(
+                CompletedPart::builder()
+                    .part_number(1)
+                    .e_tag(part.e_tag().unwrap())
+                    .build(),
+            )
+            .build();
+
+        let complete = || {
+            h.s3.complete_multipart_upload()
+                .bucket("my-bucket")
+                .key("retried")
+                .upload_id(&upload_id)
+                .multipart_upload(completed.clone())
+                .send()
+        };
+
+        let first = complete().await.unwrap();
+        let second = complete().await.unwrap();
+
+        assert_eq!(first.e_tag(), second.e_tag());
+        assert!(first.e_tag().unwrap().ends_with("-1\""));
+    }
+
+    /// Bookkeeping left over from a finished upload is invisible to a client, so it must
+    /// not be what stops them deleting the bucket.
+    #[tokio::test]
+    async fn should_allow_deleting_a_bucket_after_an_upload_finished() {
+        let h = harness_with_bucket().await;
+        let created =
+            h.s3.create_multipart_upload()
+                .bucket("my-bucket")
+                .key("done")
+                .send()
+                .await
+                .unwrap();
+        let upload_id = created.upload_id().unwrap().to_string();
+        let part =
+            h.s3.upload_part()
+                .bucket("my-bucket")
+                .key("done")
+                .upload_id(&upload_id)
+                .part_number(1)
+                .body(ByteStream::from(filler(128, b'x')))
+                .send()
+                .await
+                .unwrap();
+        h.s3.complete_multipart_upload()
+            .bucket("my-bucket")
+            .key("done")
+            .upload_id(&upload_id)
+            .multipart_upload(
+                CompletedMultipartUpload::builder()
+                    .parts(
+                        CompletedPart::builder()
+                            .part_number(1)
+                            .e_tag(part.e_tag().unwrap())
+                            .build(),
+                    )
+                    .build(),
+            )
+            .send()
+            .await
+            .unwrap();
+
+        h.s3.delete_object()
+            .bucket("my-bucket")
+            .key("done")
+            .send()
+            .await
+            .unwrap();
+
+        h.s3.delete_bucket()
+            .bucket("my-bucket")
+            .send()
+            .await
+            .unwrap();
+    }
+
+    /// An upload still in flight does block the delete, as it does on S3.
+    #[tokio::test]
+    async fn should_refuse_to_delete_a_bucket_with_an_upload_in_flight() {
+        let h = harness_with_bucket().await;
+        h.s3.create_multipart_upload()
+            .bucket("my-bucket")
+            .key("pending")
+            .send()
+            .await
+            .unwrap();
+
+        let error =
+            h.s3.delete_bucket()
+                .bucket("my-bucket")
+                .send()
+                .await
+                .unwrap_err()
+                .into_service_error();
+
+        assert_eq!(error.code(), Some("BucketNotEmpty"));
+    }
+
     #[tokio::test]
     async fn should_report_no_such_upload_for_an_unknown_id() {
         let h = harness_with_bucket().await;
