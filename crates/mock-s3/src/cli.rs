@@ -51,4 +51,18 @@ pub struct Cli {
     /// Log level, or a full tracing filter such as `mock_s3=debug,axum=info`.
     #[arg(long, env = "MOCK_S3_LOG", default_value = "info")]
     pub log: String,
+
+    /// Log output format. `json` is one object per line, for a CI job that parses it.
+    #[arg(long, env = "MOCK_S3_LOG_FORMAT", default_value = "text")]
+    pub log_format: LogFormat,
+
+    /// How many recent requests to keep for `GET /_admin/requests`. Zero turns it off.
+    #[arg(long, env = "MOCK_S3_REQUEST_LOG_SIZE", default_value_t = 1000)]
+    pub request_log_size: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum LogFormat {
+    Text,
+    Json,
 }

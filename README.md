@@ -86,7 +86,10 @@ Configuration
 | `--console-port` | `9001` | Console and admin API port |
 | `--no-console` | off | Disable the console listener |
 | `--region` | `us-east-1` | Region reported in responses |
-| `--log <level>` | `info` | `error`, `warn`, `info`, `debug`, `trace` |
+| `--base-domain <host>` | off | Also serve virtual-hosted addressing, so `bucket.<host>` addresses `bucket` |
+| `--log <level>` | `info` | `error`, `warn`, `info`, `debug`, `trace`, or a full filter |
+| `--log-format <fmt>` | `text` | `text` or `json`, one object per line |
+| `--request-log-size <n>` | `1000` | Requests kept for `/_admin/requests`; `0` disables |
 
 Every flag has a `MOCK_S3_`-prefixed environment variable equivalent, which is usually
 easier in a compose file.
@@ -146,10 +149,20 @@ No global switches. That is what makes one shared instance safe for a parallel t
 suite: a test making one bucket return `503` cannot affect a test using another. Give
 each test its own bucket and they will not see each other.
 
-Two things make it pleasant in a suite: `POST /_admin/reset` wipes everything or a
-single bucket, far faster than restarting a container; and per-bucket fault injection
-lets you make specific requests fail with a given status, code or latency, so testing
-retry logic stops needing a broken network.
+Two things make it pleasant in a suite. `POST /_admin/reset` wipes everything, or
+`/_admin/reset/{bucket}` empties one, far faster than restarting a container. And
+`GET /_admin/requests` returns what clients actually sent, newest first:
+
+```json
+[{ "method": "GET", "path": "/my-bucket",
+   "query": "list-type=2&prefix=tree&encoding-type=url",
+   "status": 200, "duration_ms": 0, "access_key_id": "test",
+   "request_id": "000000000000007B" }]
+```
+
+That answers the question a mock gets asked most: an SDK makes calls you never wrote — a
+`GetBucketLocation` before a listing, a switch to multipart above a threshold — and this
+is how you see them.
 
 Rust users can skip the container and use `mock-s3-testkit` to spawn an instance
 in-process on a random port.
@@ -164,18 +177,29 @@ Supported operations
 | Bucket | `CreateBucket`, `DeleteBucket`, `HeadBucket` | working |
 | Bucket | `ListObjectsV2`, `ListObjects` | working, with prefix, delimiter, `max-keys` and continuation tokens |
 | Bucket | `GetBucketLocation`, `GetBucketVersioning` | working |
-| Bucket | `DeleteObjects` | `501 NotImplemented` |
-| Object | `PutObject`, `GetObject`, `HeadObject`, `DeleteObject` | working |
+| Bucket | `GetBucketAcl`, `GetBucketRequestPayment` | working |
+| Bucket | `DeleteObjects` | working |
+| Object | `PutObject`, `GetObject`, `HeadObject`, `DeleteObject`, `CopyObject` | working |
 | Object | `GetObject` with a single `Range` | working |
-| Object | `CopyObject` | `501 NotImplemented` |
-| Multipart | `CreateMultipartUpload` … `CompleteMultipartUpload` | `501 NotImplemented` |
+| Object | `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since` | working |
+| Object | `GetObjectAcl`, `GetObjectTagging` | working |
+| Multipart | `CreateMultipartUpload`, `UploadPart`, `CompleteMultipartUpload`, `AbortMultipartUpload`, `ListParts`, `ListMultipartUploads` | working |
 
-The operations that answer `501` do exactly that rather than pretending to succeed, so a
-client that needs one fails loudly instead of passing against a lie.
+Multipart matters more than its place in that list suggests: SDKs switch to it on their
+own above roughly 8 MB, so a caller who never mentions multipart still depends on it. A
+multipart object reports the ETag S3 reports — a digest over the parts' digests with a
+`-N` suffix, not the MD5 of the assembled bytes.
 
-Multipart is the one to know about: SDKs switch to it automatically above a size
-threshold, usually around 8 MB, with no change in caller code. Uploading a file larger
-than that through an SDK gets a `501` until it is implemented.
+The bucket settings clients probe on connect — CORS, lifecycle, policy, tagging,
+encryption, website, replication, object lock, notification, logging, accelerate — answer
+the way real S3 does when nothing is configured, with the specific "not configured" error
+or an empty document. mock-s3 stores none of them: a `PUT` of one is accepted and
+ignored, because pretending to enforce a lifecycle rule would be worse than refusing.
+
+**Not implemented:** bucket versioning (`ListObjectVersions`, version ids, delete
+markers), `UploadPartCopy`, and real ACL or policy enforcement. Anything genuinely
+missing answers `501 NotImplemented` rather than pretending to succeed, so a test that
+needs it fails loudly instead of passing against a lie.
 
 Working today alongside the operations: user metadata round-tripping through
 `x-amz-meta-*`, content type preservation, MD5 ETags, `encoding-type=url` listings,

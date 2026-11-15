@@ -13,7 +13,7 @@ use tokio::net::TcpListener;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = cli::Cli::parse();
-    init_tracing(&cli.log);
+    init_tracing(&cli.log, cli.log_format);
 
     let (store, backend): (Arc<dyn Store>, String) = if cli.in_memory {
         (Arc::new(MemoryStore::new()), "memory".to_string())
@@ -57,8 +57,12 @@ async fn main() -> anyhow::Result<()> {
         None => tracing::info!("addressing  path-style; set forcePathStyle on your client"),
     }
 
+    // One log, written by the S3 listener and read by the console.
+    let request_log = Arc::new(mock_s3_proto::RequestLog::new(cli.request_log_size));
+
     let proto_config = mock_s3_proto::ProtoConfig {
         base_domain: cli.base_domain.clone(),
+        request_log: request_log.clone(),
     };
 
     let s3 = {
@@ -71,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let console = console_listener.map(|listener| {
-        let router = mock_s3_console::router(engine.clone());
+        let router = mock_s3_console::router(engine.clone(), request_log.clone());
         tokio::spawn(async move {
             axum::serve(listener, router.into_make_service())
                 .with_graceful_shutdown(shutdown())
@@ -93,16 +97,21 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn init_tracing(filter: &str) {
+fn init_tracing(filter: &str, format: cli::LogFormat) {
     use tracing_subscriber::{EnvFilter, fmt};
 
     let filter = EnvFilter::try_new(filter).unwrap_or_else(|_| EnvFilter::new("info"));
 
-    fmt()
-        .with_env_filter(filter)
-        .with_target(false)
-        .without_time()
-        .init();
+    match format {
+        cli::LogFormat::Json => fmt().with_env_filter(filter).json().init(),
+        // No timestamp in text mode: container runtimes add their own, and a doubled
+        // one is just noise in the common case.
+        cli::LogFormat::Text => fmt()
+            .with_env_filter(filter)
+            .with_target(false)
+            .without_time()
+            .init(),
+    }
 }
 
 /// Both listeners wait on the same signal, so Ctrl-C stops the whole process cleanly.

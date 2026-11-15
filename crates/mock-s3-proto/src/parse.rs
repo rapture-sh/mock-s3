@@ -55,10 +55,7 @@ fn walk(body: &[u8], mut visit: impl FnMut(&str, Option<&str>)) -> Result<(), S3
                 visit(&open, None);
             }
             Ok(Event::Text(contents)) => {
-                let value = contents
-                    .unescape()
-                    .map_err(|error| malformed(error))?
-                    .into_owned();
+                let value = contents.unescape().map_err(malformed)?.into_owned();
                 if !open.is_empty() {
                     visit(&open, Some(&value));
                 }

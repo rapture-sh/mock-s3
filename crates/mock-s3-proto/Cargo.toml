@@ -17,4 +17,5 @@ hex = { workspace = true }
 http = { workspace = true }
 percent-encoding = { workspace = true }
 quick-xml = { workspace = true }
+serde = { workspace = true }
 tracing = { workspace = true }

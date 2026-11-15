@@ -79,9 +79,48 @@ if ! helper 'cmp /work/my-file /work/copied-back'; then
 fi
 echo "identical"
 
-step "7. clean up"
-aws_cli s3api delete-object --bucket "$BUCKET" --key my-file
-aws_cli s3api delete-object --bucket "$BUCKET" --key copied-file
+step "7. a file big enough to force multipart"
+# The CLI switches to multipart above its threshold with no change in the command, so
+# this exercises the whole upload lifecycle without ever naming it.
+helper 'head -c 20971520 /dev/urandom > /work/big-file && md5sum /work/big-file'
+aws_cli s3 cp ./big-file "s3://$BUCKET/big-file"
+aws_cli s3 cp "s3://$BUCKET/big-file" ./big-back
+if ! helper 'cmp /work/big-file /work/big-back'; then
+  echo "FAIL: the multipart round trip changed the bytes" >&2
+  exit 1
+fi
+echo "identical"
+# A multipart object's etag carries a -<partcount> suffix; a plain MD5 would be wrong.
+aws_cli s3api head-object --bucket "$BUCKET" --key big-file --query ETag --output text
+
+step "8. server-side copy"
+aws_cli s3 cp "s3://$BUCKET/my-file" "s3://$BUCKET/server-side-copy"
+aws_cli s3api head-object --bucket "$BUCKET" --key server-side-copy --query ContentLength --output text
+
+step "9. sync a directory up"
+helper 'mkdir -p /work/tree/nested && echo one > /work/tree/one.txt && echo two > /work/tree/nested/two.txt'
+aws_cli s3 sync ./tree "s3://$BUCKET/tree"
+aws_cli s3 ls --recursive "s3://$BUCKET/tree"
+
+step "10. recursive delete"
+# The CLI deletes one key at a time below its batching threshold, so this covers the
+# recursive walk rather than DeleteObjects itself; the SDK suite covers the batch API.
+aws_cli s3 rm --recursive "s3://$BUCKET/tree"
+# `s3 ls` exits non-zero when a prefix matches nothing, which is the answer we want
+# here, so its failure is swallowed rather than taken as an error.
+remaining=$( { aws_cli s3 ls --recursive "s3://$BUCKET/tree" || true; } | wc -l )
+if [ "$remaining" -ne 0 ]; then
+  echo "FAIL: $remaining objects survived the recursive delete" >&2
+  exit 1
+fi
+echo "tree is empty"
+
+step "11. the request log recorded what the client sent"
+curl -fsS "${CONSOLE_ENDPOINT:-http://localhost:9001}/_admin/requests?limit=3" || true
+echo
+
+step "12. clean up"
+aws_cli s3 rm --recursive "s3://$BUCKET/" || true
 aws_cli s3api delete-bucket --bucket "$BUCKET"
 
 printf '\nall CLI checks passed\n'

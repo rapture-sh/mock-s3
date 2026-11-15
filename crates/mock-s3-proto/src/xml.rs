@@ -352,6 +352,40 @@ pub fn delete_result(
     out
 }
 
+/// An empty configuration document, which is what S3 returns for a bucket setting that
+/// was never configured but which has no "not found" error of its own.
+pub fn empty_configuration(root: &str) -> String {
+    format!("{DECLARATION}<{root} xmlns=\"{NAMESPACE}\"></{root}>")
+}
+
+/// The owner has full control, which is the only answer a server with no ACL model can
+/// honestly give. Tools read this to decide whether they may write.
+pub fn access_control_policy() -> String {
+    format!(
+        "{DECLARATION}<AccessControlPolicy xmlns=\"{NAMESPACE}\">\
+         <Owner><ID>{OWNER_ID}</ID><DisplayName>{OWNER_DISPLAY_NAME}</DisplayName></Owner>\
+         <AccessControlList><Grant>\
+         <Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" \
+         xsi:type=\"CanonicalUser\">\
+         <ID>{OWNER_ID}</ID><DisplayName>{OWNER_DISPLAY_NAME}</DisplayName></Grantee>\
+         <Permission>FULL_CONTROL</Permission>\
+         </Grant></AccessControlList></AccessControlPolicy>"
+    )
+}
+
+/// An empty tag set. The `TagSet` element has to be there even when it holds nothing,
+/// or an SDK reports a malformed response rather than "no tags".
+pub fn object_tagging() -> String {
+    format!("{DECLARATION}<Tagging xmlns=\"{NAMESPACE}\"><TagSet></TagSet></Tagging>")
+}
+
+pub fn request_payment_configuration() -> String {
+    format!(
+        "{DECLARATION}<RequestPaymentConfiguration xmlns=\"{NAMESPACE}\">\
+         <Payer>BucketOwner</Payer></RequestPaymentConfiguration>"
+    )
+}
+
 pub fn versioning_configuration() -> String {
     format!(
         "{DECLARATION}<VersioningConfiguration xmlns=\"{NAMESPACE}\"></VersioningConfiguration>"

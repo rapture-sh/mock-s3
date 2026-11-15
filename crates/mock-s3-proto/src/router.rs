@@ -15,7 +15,7 @@ use crate::ops;
 /// virtual-hosted style would need wildcard DNS. It is also why the console is on its
 /// own port: here, the URL root *is* the bucket namespace.
 /// Wire-level settings that are not the engine's business.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone)]
 pub struct ProtoConfig {
     /// Host suffix under which `<bucket>.<suffix>` addresses a bucket.
     ///
@@ -23,6 +23,18 @@ pub struct ProtoConfig {
     /// misread as naming a bucket, which matters because the first label of any hostname
     /// would otherwise be treated as one.
     pub base_domain: Option<String>,
+
+    /// Where recent requests are recorded for the admin API. Shared with the console.
+    pub request_log: Arc<crate::RequestLog>,
+}
+
+impl Default for ProtoConfig {
+    fn default() -> Self {
+        Self {
+            base_domain: None,
+            request_log: Arc::new(crate::RequestLog::default()),
+        }
+    }
 }
 
 pub fn router(engine: Arc<Engine>, config: ProtoConfig) -> Router {
@@ -57,14 +69,69 @@ pub fn router(engine: Arc<Engine>, config: ProtoConfig) -> Router {
     // The rewrite below has to happen *before* the route table is consulted, and a layer
     // added to a router runs after its routing. Wrapping the real router as the fallback
     // of an empty one puts the layer outside the matching it needs to precede.
+    let vhost = config.clone();
+    let log = config.request_log.clone();
+
     Router::new()
         .fallback_service(routes)
         .layer(axum::middleware::from_fn(attach_request_id))
         .layer(axum::middleware::from_fn(normalize_bucket_path))
         .layer(axum::middleware::from_fn(move |request, next| {
-            let config = config.clone();
+            let config = vhost.clone();
             async move { rewrite_virtual_host(request, next, config).await }
         }))
+        // Outermost, so it records the request as the client sent it and the response
+        // as the client will see it — which is the question this log exists to answer.
+        .layer(axum::middleware::from_fn(move |request, next| {
+            let log = log.clone();
+            async move { observe(request, next, log).await }
+        }))
+}
+
+/// Log a request and record it for the admin API.
+async fn observe(request: Request, next: Next, log: Arc<crate::RequestLog>) -> Response {
+    let started = std::time::Instant::now();
+
+    let method = request.method().to_string();
+    let path = request.uri().path().to_string();
+    let query = request.uri().query().map(str::to_string);
+    let access_key_id = crate::sigv4::access_key_id(request.headers());
+
+    let response = next.run(request).await;
+
+    let status = response.status();
+    let duration_ms = started.elapsed().as_millis() as u64;
+    let request_id = response
+        .headers()
+        .get(crate::request_id::HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string);
+    let (bucket, key) = crate::request_log::split_path(&path);
+
+    tracing::info!(
+        method = %method,
+        path = %path,
+        status = status.as_u16(),
+        duration_ms,
+        bucket = bucket.as_deref().unwrap_or("-"),
+        caller = access_key_id.as_deref().unwrap_or("-"),
+        "request"
+    );
+
+    log.record(crate::RequestEntry {
+        at: chrono::Utc::now(),
+        method,
+        path,
+        query,
+        status: status.as_u16(),
+        duration_ms,
+        bucket,
+        key,
+        access_key_id,
+        request_id,
+    });
+
+    response
 }
 
 /// Turn a virtual-hosted request into a path-style one.

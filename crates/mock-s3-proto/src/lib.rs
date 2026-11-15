@@ -10,6 +10,7 @@ pub mod ops;
 pub mod parse;
 pub mod query;
 pub mod request_id;
+pub mod request_log;
 pub mod response;
 pub mod router;
 pub mod sigv4;
@@ -17,4 +18,5 @@ pub mod token;
 pub mod xml;
 
 pub use error::S3Error;
+pub use request_log::{RequestEntry, RequestLog};
 pub use router::{ProtoConfig, router};

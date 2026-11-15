@@ -37,35 +37,65 @@ pub struct ResetReport {
     objects_removed: Option<usize>,
 }
 
-pub fn router(engine: Arc<Engine>) -> Router {
+/// What the console listener needs: the engine, and the request log the S3 listener
+/// writes to.
+#[derive(Clone)]
+pub struct ConsoleState {
+    pub engine: Arc<Engine>,
+    pub request_log: Arc<mock_s3_proto::RequestLog>,
+}
+
+pub fn router(engine: Arc<Engine>, request_log: Arc<mock_s3_proto::RequestLog>) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/_admin/health", get(health))
         .route("/_admin/buckets", get(buckets))
+        .route("/_admin/requests", get(requests))
         .route("/_admin/reset", post(reset))
         .route("/_admin/reset/:bucket", post(reset_bucket))
-        .with_state(engine)
+        .with_state(ConsoleState {
+            engine,
+            request_log,
+        })
+}
+
+/// `GET /_admin/requests` — what clients have actually been sending, newest first.
+async fn requests(
+    State(state): State<ConsoleState>,
+    axum::extract::Query(params): axum::extract::Query<RequestQuery>,
+) -> Json<Vec<mock_s3_proto::RequestEntry>> {
+    Json(
+        state
+            .request_log
+            .recent(params.limit.unwrap_or(100).min(1000)),
+    )
+}
+
+#[derive(serde::Deserialize)]
+pub struct RequestQuery {
+    limit: Option<usize>,
 }
 
 async fn index() -> axum::response::Response {
     assets::index()
 }
 
-async fn health(State(engine): State<Arc<Engine>>) -> Result<Json<Health>, S3Error> {
-    let buckets = engine.list_buckets().await?;
+async fn health(State(state): State<ConsoleState>) -> Result<Json<Health>, S3Error> {
+    let buckets = state.engine.list_buckets().await?;
 
     Ok(Json(Health {
         status: "ok",
-        region: engine.region().to_string(),
+        region: state.engine.region().to_string(),
         buckets: buckets.len(),
     }))
 }
 
-async fn buckets(State(engine): State<Arc<Engine>>) -> Result<Json<Vec<BucketSummary>>, S3Error> {
+async fn buckets(State(state): State<ConsoleState>) -> Result<Json<Vec<BucketSummary>>, S3Error> {
     let mut summaries = Vec::new();
 
-    for bucket in engine.list_buckets().await? {
-        let listing = engine
+    for bucket in state.engine.list_buckets().await? {
+        let listing = state
+            .engine
             .list_objects(&bucket.name, &mock_s3_core::ListRequest::default())
             .await?;
         summaries.push(BucketSummary {
@@ -79,8 +109,8 @@ async fn buckets(State(engine): State<Arc<Engine>>) -> Result<Json<Vec<BucketSum
     Ok(Json(summaries))
 }
 
-async fn reset(State(engine): State<Arc<Engine>>) -> Result<Json<ResetReport>, S3Error> {
-    engine.reset().await?;
+async fn reset(State(state): State<ConsoleState>) -> Result<Json<ResetReport>, S3Error> {
+    state.engine.reset().await?;
     tracing::info!("admin reset: all buckets dropped");
 
     Ok(Json(ResetReport {
@@ -90,10 +120,10 @@ async fn reset(State(engine): State<Arc<Engine>>) -> Result<Json<ResetReport>, S
 }
 
 async fn reset_bucket(
-    State(engine): State<Arc<Engine>>,
+    State(state): State<ConsoleState>,
     Path(bucket): Path<String>,
 ) -> Result<(StatusCode, Json<ResetReport>), S3Error> {
-    let removed = engine.reset_bucket(&bucket).await?;
+    let removed = state.engine.reset_bucket(&bucket).await?;
     tracing::info!(bucket, removed, "admin reset: bucket emptied");
 
     Ok((

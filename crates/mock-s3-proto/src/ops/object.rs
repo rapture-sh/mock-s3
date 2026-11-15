@@ -39,6 +39,13 @@ pub async fn put(
         response::set(&mut out, header::ETAG, &quoted(&part.etag));
         return Ok(response::empty(StatusCode::OK, out));
     }
+    // Accepted and ignored: mock-s3 has no ACL or tag model, and a 501 here stops tools
+    // that set them as a matter of course.
+    if query.has("acl") || query.has("tagging") {
+        engine.head_object(&bucket, &key).await?;
+        return Ok(response::empty(StatusCode::OK, HeaderMap::new()));
+    }
+
     // CopyObject: a PUT that names a source instead of carrying a body.
     if let Some(source) = headers
         .get(COPY_SOURCE)
@@ -84,7 +91,27 @@ pub async fn get(
         ));
     }
 
+    if query.has("acl") {
+        engine.head_object(&bucket, &key).await?;
+        return Ok(response::xml(StatusCode::OK, xml::access_control_policy()));
+    }
+    if query.has("tagging") {
+        engine.head_object(&bucket, &key).await?;
+        return Ok(response::xml(StatusCode::OK, xml::object_tagging()));
+    }
+
     let object = engine.get_object(&bucket, &key).await?;
+
+    match preconditions(&headers, &object.meta) {
+        Precondition::Failed => return Err(precondition_failed()),
+        Precondition::NotModified => {
+            let mut out = object_headers(&object.meta, Checksums::Omit);
+            out.remove(header::CONTENT_TYPE);
+            return Ok(response::empty(StatusCode::NOT_MODIFIED, out));
+        }
+        Precondition::Proceed => {}
+    }
+
     let size = object.meta.size;
 
     let range = headers
@@ -128,8 +155,20 @@ pub async fn get(
 pub async fn head(
     State(engine): State<Arc<Engine>>,
     Path((bucket, key)): Path<(String, String)>,
+    headers: HeaderMap,
 ) -> Result<Response, S3Error> {
     let meta = engine.head_object(&bucket, &key).await?;
+
+    match preconditions(&headers, &meta) {
+        Precondition::Failed => return Err(precondition_failed()),
+        Precondition::NotModified => {
+            return Ok(response::empty(
+                StatusCode::NOT_MODIFIED,
+                object_headers(&meta, Checksums::Omit),
+            ));
+        }
+        Precondition::Proceed => {}
+    }
 
     let mut out = object_headers(&meta, Checksums::Include);
     response::set(&mut out, header::CONTENT_LENGTH, &meta.size.to_string());
@@ -145,6 +184,10 @@ pub async fn delete(
     let query = Query::parse(raw.as_deref());
     if let Some(upload_id) = query.non_empty("uploadId") {
         engine.abort_upload(&bucket, upload_id).await?;
+        return Ok(response::empty(StatusCode::NO_CONTENT, HeaderMap::new()));
+    }
+    if query.has("tagging") {
+        engine.head_object(&bucket, &key).await?;
         return Ok(response::empty(StatusCode::NO_CONTENT, HeaderMap::new()));
     }
 
@@ -246,6 +289,89 @@ async fn copy_object(
         StatusCode::OK,
         xml::copy_object_result(&meta.etag, &meta.last_modified),
     ))
+}
+
+/// What the conditional headers on a read say to do.
+#[derive(Debug, PartialEq, Eq)]
+enum Precondition {
+    Proceed,
+    /// The client already has this version: 304, no body.
+    NotModified,
+    /// The client's assumption is wrong: 412.
+    Failed,
+}
+
+fn precondition_failed() -> S3Error {
+    S3Error::new(
+        StatusCode::PRECONDITION_FAILED,
+        "PreconditionFailed",
+        "At least one of the preconditions you specified did not hold.",
+    )
+}
+
+/// Evaluate `If-Match`, `If-None-Match`, `If-Modified-Since` and
+/// `If-Unmodified-Since`.
+///
+/// Precedence follows HTTP: an entity-tag condition wins over the matching date
+/// condition, so a client sending both gets the answer the stronger validator implies.
+fn preconditions(headers: &HeaderMap, meta: &ObjectMeta) -> Precondition {
+    let header = |name: http::HeaderName| {
+        headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+    };
+
+    let matches_etag = |candidates: &str| {
+        candidates == "*"
+            || candidates
+                .split(',')
+                .map(|tag| tag.trim().trim_start_matches("W/").trim_matches('"'))
+                .any(|tag| tag == meta.etag)
+    };
+
+    if let Some(candidates) = header(header::IF_MATCH) {
+        return if matches_etag(candidates) {
+            Precondition::Proceed
+        } else {
+            Precondition::Failed
+        };
+    }
+    if let Some(candidates) = header(header::IF_NONE_MATCH) {
+        return if matches_etag(candidates) {
+            Precondition::NotModified
+        } else {
+            Precondition::Proceed
+        };
+    }
+
+    // Last-Modified goes on the wire with second precision, so compare at that
+    // granularity or a sub-second difference looks like a change.
+    let modified_at = meta.last_modified.timestamp();
+
+    if let Some(since) = header(header::IF_UNMODIFIED_SINCE).and_then(parse_http_date) {
+        return if modified_at > since {
+            Precondition::Failed
+        } else {
+            Precondition::Proceed
+        };
+    }
+    if let Some(since) = header(header::IF_MODIFIED_SINCE).and_then(parse_http_date) {
+        return if modified_at <= since {
+            Precondition::NotModified
+        } else {
+            Precondition::Proceed
+        };
+    }
+
+    Precondition::Proceed
+}
+
+/// An HTTP date, as a Unix timestamp.
+fn parse_http_date(value: &str) -> Option<i64> {
+    chrono::NaiveDateTime::parse_from_str(value, "%a, %d %b %Y %H:%M:%S GMT")
+        .ok()
+        .map(|naive| naive.and_utc().timestamp())
 }
 
 /// An ETag goes on the wire quoted, and SDKs compare it including the quotes.
@@ -399,6 +525,135 @@ mod tests {
         #[test]
         fn should_wrap_the_etag_in_quotes() {
             assert_eq!(quoted("abc"), "\"abc\"");
+        }
+    }
+
+    mod parse_http_date {
+        use super::*;
+
+        #[test]
+        fn should_read_an_http_date() {
+            assert_eq!(parse_http_date("Thu, 01 Jan 1970 00:00:00 GMT"), Some(0));
+        }
+
+        #[test]
+        fn should_reject_anything_else() {
+            assert!(parse_http_date("1970-01-01").is_none());
+            assert!(parse_http_date("not a date").is_none());
+        }
+    }
+
+    mod preconditions {
+        use super::*;
+
+        fn meta_at(seconds: i64) -> ObjectMeta {
+            ObjectMeta {
+                key: "k".into(),
+                size: 1,
+                etag: "abc".into(),
+                last_modified: chrono::DateTime::from_timestamp(seconds, 0)
+                    .expect("a valid test timestamp"),
+                content_type: "text/plain".into(),
+                user_metadata: Default::default(),
+                system_headers: Default::default(),
+            }
+        }
+
+        fn with(name: &'static str, value: &str) -> HeaderMap {
+            let mut headers = HeaderMap::new();
+            headers.insert(name, value.parse().expect("a valid test header"));
+            headers
+        }
+
+        #[test]
+        fn should_proceed_when_no_condition_is_given() {
+            assert_eq!(
+                preconditions(&HeaderMap::new(), &meta_at(0)),
+                Precondition::Proceed
+            );
+        }
+
+        #[test]
+        fn should_proceed_when_if_match_matches() {
+            let headers = with("if-match", "\"abc\"");
+
+            assert_eq!(preconditions(&headers, &meta_at(0)), Precondition::Proceed);
+        }
+
+        #[test]
+        fn should_fail_when_if_match_does_not_match() {
+            let headers = with("if-match", "\"other\"");
+
+            assert_eq!(preconditions(&headers, &meta_at(0)), Precondition::Failed);
+        }
+
+        #[test]
+        fn should_accept_a_star_for_if_match() {
+            let headers = with("if-match", "*");
+
+            assert_eq!(preconditions(&headers, &meta_at(0)), Precondition::Proceed);
+        }
+
+        #[test]
+        fn should_report_not_modified_when_if_none_match_matches() {
+            let headers = with("if-none-match", "\"abc\"");
+
+            assert_eq!(
+                preconditions(&headers, &meta_at(0)),
+                Precondition::NotModified
+            );
+        }
+
+        #[test]
+        fn should_match_one_etag_out_of_a_list() {
+            let headers = with("if-match", "\"nope\", \"abc\"");
+
+            assert_eq!(preconditions(&headers, &meta_at(0)), Precondition::Proceed);
+        }
+
+        #[test]
+        fn should_ignore_a_weak_validator_prefix() {
+            let headers = with("if-match", "W/\"abc\"");
+
+            assert_eq!(preconditions(&headers, &meta_at(0)), Precondition::Proceed);
+        }
+
+        #[test]
+        fn should_report_not_modified_when_the_object_is_older_than_if_modified_since() {
+            let headers = with("if-modified-since", "Thu, 01 Jan 1970 00:00:10 GMT");
+
+            assert_eq!(
+                preconditions(&headers, &meta_at(5)),
+                Precondition::NotModified
+            );
+        }
+
+        #[test]
+        fn should_proceed_when_the_object_is_newer_than_if_modified_since() {
+            let headers = with("if-modified-since", "Thu, 01 Jan 1970 00:00:10 GMT");
+
+            assert_eq!(preconditions(&headers, &meta_at(20)), Precondition::Proceed);
+        }
+
+        #[test]
+        fn should_fail_when_the_object_changed_after_if_unmodified_since() {
+            let headers = with("if-unmodified-since", "Thu, 01 Jan 1970 00:00:10 GMT");
+
+            assert_eq!(preconditions(&headers, &meta_at(20)), Precondition::Failed);
+        }
+
+        #[test]
+        fn should_let_an_entity_tag_condition_win_over_a_date_one() {
+            let mut headers = with("if-match", "\"abc\"");
+            headers.insert(
+                "if-unmodified-since",
+                "Thu, 01 Jan 1970 00:00:00 GMT".parse().unwrap(),
+            );
+
+            assert_eq!(
+                preconditions(&headers, &meta_at(500)),
+                Precondition::Proceed
+            );
         }
     }
 }

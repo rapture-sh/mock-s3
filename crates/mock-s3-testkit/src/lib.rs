@@ -100,7 +100,12 @@ async fn spawn_with(
 
     let (shutdown, _) = watch::channel(false);
 
-    let s3_router = mock_s3_proto::router(engine.clone(), Default::default());
+    // Both listeners share one request log, so a test can assert on what the client
+    // actually sent.
+    let config = mock_s3_proto::ProtoConfig::default();
+    let request_log = config.request_log.clone();
+
+    let s3_router = mock_s3_proto::router(engine.clone(), config);
     let s3_signal = shutdown.subscribe();
     tokio::spawn(async move {
         let _ = axum::serve(s3_listener, s3_router.into_make_service())
@@ -108,7 +113,7 @@ async fn spawn_with(
             .await;
     });
 
-    let console_router = mock_s3_console::router(engine);
+    let console_router = mock_s3_console::router(engine, request_log);
     let console_signal = shutdown.subscribe();
     tokio::spawn(async move {
         let _ = axum::serve(console_listener, console_router.into_make_service())

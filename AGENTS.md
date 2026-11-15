@@ -15,12 +15,15 @@ can be hosted.
 
 It is part of [Rapture.sh](https://rapture.sh) and is MIT licensed.
 
-**What is in the tree right now.** Buckets and single-part objects work end to end, with
-listings, ranges, user metadata and MD5 ETags. `CopyObject`, `DeleteObjects` and the
-multipart operations answer `501 NotImplemented`. Fault injection, the console frontend,
-`mock-s3-testkit` and `conformance` have no code yet, so where this file names one of
-them it is the contract for building it rather than code you can read — check that a file
-exists before assuming it.
+**What is in the tree right now.** Buckets, objects, listings, ranges, conditional
+requests, multipart uploads, `CopyObject`, `DeleteObjects`, the bucket settings clients
+probe, `aws-chunked` uploads, request ids and a request log all work, verified by the
+Rust SDK suite in `crates/conformance`, the JavaScript SDK suite in `tests/` and the AWS
+CLI script in `tests/cli/`. Bucket versioning and fault injection have no code, and
+neither does the console frontend — the console serves a placeholder page over a working
+admin API. Where this file names something that has not landed, it is the contract for
+building it rather than code you can read, so check that a file exists before assuming
+it.
 
 **The console is optional.** It is a viewer and nothing more: `--no-console` turns it off
 and the S3 API is unaffected. No S3 behaviour may ever depend on it being there.
