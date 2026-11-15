@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use mock_s3_core::multipart::{PartInfo, UploadInfo};
-use mock_s3_core::{BucketInfo, ListResult};
+use mock_s3_core::{BucketInfo, ListResult, VersionListResult, VersioningStatus};
 
 const DECLARATION: &str = r#"<?xml version="1.0" encoding="UTF-8"?>"#;
 const NAMESPACE: &str = "http://s3.amazonaws.com/doc/2006-03-01/";
@@ -245,16 +245,31 @@ pub fn location_constraint(region: &str) -> String {
     )
 }
 
-/// `ListObjectVersions`, for a bucket that has no versioning.
+/// What a `ListObjectVersions` request asked for, echoed back in its answer.
 ///
-/// Every object is reported as its own single version, with `VersionId` of `null` and
-/// `IsLatest` true, which is exactly what S3 returns for an unversioned bucket.
+/// Separate from [`ListingEcho`] because a versions page resumes from two markers rather
+/// than one token: a key, and a version of that key.
+pub struct VersionListingEcho<'request> {
+    pub bucket: &'request str,
+    pub prefix: &'request str,
+    pub delimiter: Option<&'request str>,
+    pub max_keys: usize,
+    pub key_marker: Option<&'request str>,
+    pub version_id_marker: Option<&'request str>,
+    pub encoding_type: Option<&'request str>,
+}
+
+/// `ListObjectVersions`.
 ///
-/// This is not cosmetic. Clients use `?versions` to enumerate a bucket before deleting
-/// it — the ceph/s3-tests cleanup does — and answering with a `ListBucketResult` instead
-/// parses as *no objects*, so the caller deletes nothing and then cannot delete the
-/// bucket. Returning the wrong document is worse than returning an error.
-pub fn list_versions_result(echo: &ListingEcho<'_>, result: &ListResult) -> String {
+/// Versions and delete markers are different elements but one sequence: they are written
+/// in listing order, interleaved, because that order is what a client paginates through.
+///
+/// A bucket that was never versioned still answers here, with one `null` version per
+/// object. That is what real S3 does, and it is not cosmetic: clients use `?versions` to
+/// enumerate a bucket before deleting it — the ceph/s3-tests cleanup does — and an answer
+/// in the wrong document shape parses as *no objects*, so the caller deletes nothing and
+/// then cannot delete the bucket.
+pub fn list_versions_result(echo: &VersionListingEcho<'_>, result: &VersionListResult) -> String {
     let mut out = String::new();
     let _ = write!(
         out,
@@ -269,9 +284,34 @@ pub fn list_versions_result(echo: &ListingEcho<'_>, result: &ListResult) -> Stri
     let _ = write!(
         out,
         "<KeyMarker>{}</KeyMarker>",
-        listing_value(echo.start_after.unwrap_or_default(), echo.encoding_type)
+        listing_value(echo.key_marker.unwrap_or_default(), echo.encoding_type)
     );
-    out.push_str("<VersionIdMarker></VersionIdMarker>");
+    let _ = write!(
+        out,
+        "<VersionIdMarker>{}</VersionIdMarker>",
+        escape(echo.version_id_marker.unwrap_or_default())
+    );
+    if let Some(next) = &result.next_key_marker {
+        let _ = write!(
+            out,
+            "<NextKeyMarker>{}</NextKeyMarker>",
+            listing_value(next, echo.encoding_type)
+        );
+        // A client feeds both markers back into the next request, and some validate
+        // their own parameters before sending, so a page that offers one without the
+        // other cannot be followed. A page that ended on a common prefix has no version
+        // to resume from, which S3 reports as `null`.
+        let _ = write!(
+            out,
+            "<NextVersionIdMarker>{}</NextVersionIdMarker>",
+            escape(
+                result
+                    .next_version_id_marker
+                    .as_deref()
+                    .unwrap_or(mock_s3_core::versioning::NULL_VERSION_ID)
+            )
+        );
+    }
     let _ = write!(out, "<MaxKeys>{}</MaxKeys>", echo.max_keys);
     let _ = write!(
         out,
@@ -288,41 +328,46 @@ pub fn list_versions_result(echo: &ListingEcho<'_>, result: &ListResult) -> Stri
     if wants_url_encoding(echo.encoding_type) {
         out.push_str("<EncodingType>url</EncodingType>");
     }
-    if let Some(cursor) = &result.next_continuation_token {
-        let _ = write!(
-            out,
-            "<NextKeyMarker>{}</NextKeyMarker>",
-            listing_value(cursor, echo.encoding_type)
-        );
-        // Both markers or neither. A client paginating this listing feeds both back
-        // into the next call, so omitting this one makes the second page impossible to
-        // ask for — and a client that validates its own parameters fails before it even
-        // sends the request. `null` is the version id of an object in an unversioned
-        // bucket, which is every object here.
-        out.push_str("<NextVersionIdMarker>null</NextVersionIdMarker>");
-    }
 
-    for object in &result.objects {
-        out.push_str("<Version>");
+    for version in &result.versions {
+        let element = if version.is_delete_marker() {
+            "DeleteMarker"
+        } else {
+            "Version"
+        };
+
+        let _ = write!(out, "<{element}>");
         let _ = write!(
             out,
             "<Key>{}</Key>",
-            listing_value(&object.key, echo.encoding_type)
+            listing_value(&version.key, echo.encoding_type)
         );
-        out.push_str("<VersionId>null</VersionId><IsLatest>true</IsLatest>");
+        let _ = write!(
+            out,
+            "<VersionId>{}</VersionId>",
+            escape(&version.version_id)
+        );
+        let _ = write!(
+            out,
+            "<IsLatest>{}</IsLatest>",
+            if version.is_latest { "true" } else { "false" }
+        );
         let _ = write!(
             out,
             "<LastModified>{}</LastModified>",
-            xml_timestamp(&object.last_modified)
+            xml_timestamp(&version.last_modified)
         );
-        let _ = write!(out, "<ETag>&quot;{}&quot;</ETag>", escape(&object.etag));
-        let _ = write!(out, "<Size>{}</Size>", object.size);
-        out.push_str("<StorageClass>STANDARD</StorageClass>");
+        // A delete marker has no payload, so it carries neither an ETag nor a size.
+        if let Some(meta) = &version.meta {
+            let _ = write!(out, "<ETag>&quot;{}&quot;</ETag>", escape(&meta.etag));
+            let _ = write!(out, "<Size>{}</Size>", meta.size);
+            out.push_str("<StorageClass>STANDARD</StorageClass>");
+        }
         let _ = write!(
             out,
             "<Owner><ID>{OWNER_ID}</ID><DisplayName>{OWNER_DISPLAY_NAME}</DisplayName></Owner>"
         );
-        out.push_str("</Version>");
+        let _ = write!(out, "</{element}>");
     }
 
     for prefix in &result.common_prefixes {
@@ -425,8 +470,18 @@ pub fn list_multipart_uploads_result(bucket: &str, uploads: &[UploadInfo]) -> St
 
 /// A `DeleteObjects` response. In quiet mode only failures are reported, which is what
 /// `aws s3 rm --recursive` asks for.
+/// One `<Deleted>` entry of a `DeleteObjects` answer.
+pub struct Deleted {
+    pub key: String,
+    /// The version the request named, echoed back. Absent when it named none.
+    pub version_id: Option<String>,
+    pub delete_marker: bool,
+    /// The version id of the delete marker created, or of the marker removed.
+    pub delete_marker_version_id: Option<String>,
+}
+
 pub fn delete_result(
-    deleted: &[String],
+    deleted: &[Deleted],
     errors: &[(String, &'static str, String)],
     quiet: bool,
 ) -> String {
@@ -434,8 +489,24 @@ pub fn delete_result(
     let _ = write!(out, "{DECLARATION}<DeleteResult xmlns=\"{NAMESPACE}\">");
 
     if !quiet {
-        for key in deleted {
-            let _ = write!(out, "<Deleted><Key>{}</Key></Deleted>", escape(key));
+        for entry in deleted {
+            let _ = write!(out, "<Deleted><Key>{}</Key>", escape(&entry.key));
+            if let Some(version_id) = &entry.version_id {
+                let _ = write!(out, "<VersionId>{}</VersionId>", escape(version_id));
+            }
+            // Only ever reported when true, which is what S3 does: a batch delete in an
+            // unversioned bucket answers with the key alone.
+            if entry.delete_marker {
+                out.push_str("<DeleteMarker>true</DeleteMarker>");
+                if let Some(version_id) = &entry.delete_marker_version_id {
+                    let _ = write!(
+                        out,
+                        "<DeleteMarkerVersionId>{}</DeleteMarkerVersionId>",
+                        escape(version_id)
+                    );
+                }
+            }
+            out.push_str("</Deleted>");
         }
     }
     for (key, code, message) in errors {
@@ -517,10 +588,18 @@ pub fn request_payment_configuration() -> String {
     )
 }
 
-pub fn versioning_configuration() -> String {
-    format!(
-        "{DECLARATION}<VersioningConfiguration xmlns=\"{NAMESPACE}\"></VersioningConfiguration>"
-    )
+/// `GetBucketVersioning`.
+///
+/// A bucket that has never been configured answers with an empty document rather than
+/// `Status: Suspended`. The two are not the same thing to S3 — a suspended bucket still
+/// holds the versions it collected — and an SDK reports the empty one as `None`.
+pub fn versioning_configuration(status: VersioningStatus) -> String {
+    let mut out = format!("{DECLARATION}<VersioningConfiguration xmlns=\"{NAMESPACE}\">");
+    if status.is_configured() {
+        let _ = write!(out, "<Status>{}</Status>", status.as_str());
+    }
+    out.push_str("</VersioningConfiguration>");
+    out
 }
 
 #[cfg(test)]
@@ -711,6 +790,7 @@ mod tests {
                 last_modified: at(0),
                 content_type: "text/plain".into(),
                 user_metadata: Default::default(),
+                version_id: None,
                 system_headers: Default::default(),
             }
         }

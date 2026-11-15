@@ -4,6 +4,12 @@ use mock_s3_core::Error as CoreError;
 
 use crate::xml;
 
+/// `true` on a response about an object whose current version is a delete marker.
+pub const DELETE_MARKER: &str = "x-amz-delete-marker";
+
+/// The version a response is about: the one read, written, or deleted.
+pub const VERSION_ID: &str = "x-amz-version-id";
+
 /// An S3 error on its way to the wire.
 ///
 /// The code and status pairing is the contract SDKs depend on, so it is set in one place
@@ -15,6 +21,12 @@ pub struct S3Error {
     pub code: &'static str,
     pub message: String,
     pub resource: Option<String>,
+    /// Headers that belong on the error itself rather than in its body.
+    ///
+    /// A delete marker is the reason this exists: the 404 that a deleted key answers
+    /// with carries `x-amz-delete-marker` and the marker's version id, and that is the
+    /// only way a client can tell "deleted" from "never existed".
+    pub headers: Vec<(&'static str, String)>,
 }
 
 impl S3Error {
@@ -24,11 +36,17 @@ impl S3Error {
             code,
             message: message.into(),
             resource: None,
+            headers: Vec::new(),
         }
     }
 
     pub fn with_resource(mut self, resource: impl Into<String>) -> Self {
         self.resource = Some(resource.into());
+        self
+    }
+
+    pub fn with_header(mut self, name: &'static str, value: impl Into<String>) -> Self {
+        self.headers.push((name, value.into()));
         self
     }
 
@@ -84,6 +102,36 @@ impl From<CoreError> for S3Error {
                 "The specified key does not exist.",
             )
             .with_resource(key),
+
+            CoreError::NoSuchVersion { key, version_id } => S3Error::new(
+                StatusCode::NOT_FOUND,
+                "NoSuchVersion",
+                "The version ID specified in the request does not match an existing version.",
+            )
+            .with_resource(format!("{key}?versionId={version_id}")),
+
+            // A deleted key in a versioned bucket is still a 404, and the headers are
+            // the only thing that separates it from a key that was never written.
+            CoreError::DeleteMarker { key, version_id } => S3Error::new(
+                StatusCode::NOT_FOUND,
+                "NoSuchKey",
+                "The specified key does not exist.",
+            )
+            .with_resource(key)
+            .with_header(DELETE_MARKER, "true")
+            .with_header(VERSION_ID, version_id),
+
+            // Naming a delete marker outright is a 405, not a 404: the marker is there,
+            // it just has no body to return. The `Allow` header says what is left.
+            CoreError::DeleteMarkerVersion { key, version_id } => S3Error::new(
+                StatusCode::METHOD_NOT_ALLOWED,
+                "MethodNotAllowed",
+                "The specified method is not allowed against this resource.",
+            )
+            .with_resource(key)
+            .with_header(DELETE_MARKER, "true")
+            .with_header(VERSION_ID, version_id)
+            .with_header("allow", "DELETE"),
 
             CoreError::InvalidBucketName(detail) => S3Error::new(
                 StatusCode::BAD_REQUEST,
@@ -164,6 +212,12 @@ impl IntoResponse for S3Error {
                 http::HeaderName::from_static(crate::request_id::HEADER),
                 value,
             );
+        }
+
+        for (name, value) in &self.headers {
+            if let Ok(name) = http::HeaderName::try_from(*name) {
+                crate::response::set(response.headers_mut(), name, value);
+            }
         }
 
         response

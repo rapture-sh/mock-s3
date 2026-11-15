@@ -8,6 +8,7 @@
 //! Responses are still written by hand in [`crate::xml`] — this module only reads.
 
 use http::StatusCode;
+use mock_s3_core::VersioningStatus;
 use quick_xml::Reader;
 use quick_xml::events::Event;
 
@@ -21,12 +22,21 @@ pub struct CompletedPart {
     pub etag: String,
 }
 
+/// One `<Object>` from a `DeleteObjects` body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteTarget {
+    pub key: String,
+    /// Naming a version deletes that version outright. Without one, a versioned bucket
+    /// gets a delete marker instead, so the difference matters.
+    pub version_id: Option<String>,
+}
+
 /// A parsed `DeleteObjects` body.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct DeleteRequest {
     /// Quiet mode reports only failures, which is what `aws s3 rm --recursive` asks for.
     pub quiet: bool,
-    pub keys: Vec<String>,
+    pub objects: Vec<DeleteTarget>,
 }
 
 fn malformed(detail: impl std::fmt::Display) -> S3Error {
@@ -120,17 +130,60 @@ pub fn complete_multipart_upload(body: &[u8]) -> Result<Vec<CompletedPart>, S3Er
 
 pub fn delete_objects(body: &[u8]) -> Result<DeleteRequest, S3Error> {
     let mut request = DeleteRequest::default();
+    let mut key: Option<String> = None;
+    let mut version_id: Option<String> = None;
 
     walk(body, |element, text| match (element, text) {
         ("Quiet", Some(value)) => request.quiet = value.trim().eq_ignore_ascii_case("true"),
-        ("Key", Some(value)) => request.keys.push(value.to_string()),
+        ("Object", None) => {
+            key = None;
+            version_id = None;
+        }
+        ("Key", Some(value)) => key = Some(value.to_string()),
+        ("VersionId", Some(value)) => {
+            let trimmed = value.trim();
+            version_id = (!trimmed.is_empty()).then(|| trimmed.to_string());
+        }
+        ("/Object", None) => {
+            if let Some(found) = key.take() {
+                request.objects.push(DeleteTarget {
+                    key: found,
+                    version_id: version_id.take(),
+                });
+            }
+        }
         _ => {}
     })?;
 
-    if request.keys.is_empty() {
+    if request.objects.is_empty() {
         return Err(malformed("no objects were listed"));
     }
     Ok(request)
+}
+
+/// A `PutBucketVersioning` body.
+///
+/// `MfaDelete` is parsed over and ignored: mock-s3 has no authentication, so there is no
+/// MFA to require. Real S3 rejects a document with no `Status` rather than defaulting it,
+/// and so does this — silently picking one would hide a client bug.
+pub fn versioning_configuration(body: &[u8]) -> Result<VersioningStatus, S3Error> {
+    let mut status: Option<VersioningStatus> = None;
+
+    walk(body, |element, text| {
+        if let ("Status", Some(value)) = (element, text) {
+            status = Some(VersioningStatus::parse(value));
+        }
+    })?;
+
+    match status {
+        Some(found) if found.is_configured() => Ok(found),
+        _ => Err(S3Error::new(
+            StatusCode::BAD_REQUEST,
+            "IllegalVersioningConfigurationException",
+            "The versioning configuration specified in the request is invalid: Status must \
+             be Enabled or Suspended.",
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -219,6 +272,14 @@ mod tests {
     mod delete_objects {
         use super::*;
 
+        fn keys(request: &DeleteRequest) -> Vec<&str> {
+            request
+                .objects
+                .iter()
+                .map(|target| target.key.as_str())
+                .collect()
+        }
+
         #[test]
         fn should_read_every_key() {
             let body = br#"<Delete>
@@ -228,7 +289,7 @@ mod tests {
 
             let request = delete_objects(body).unwrap();
 
-            assert_eq!(request.keys, vec!["a.txt", "photos/b.jpg"]);
+            assert_eq!(keys(&request), vec!["a.txt", "photos/b.jpg"]);
             assert!(!request.quiet);
         }
 
@@ -244,7 +305,7 @@ mod tests {
         fn should_unescape_a_key_containing_xml_syntax() {
             let body = br#"<Delete><Object><Key>notes&amp;misc.txt</Key></Object></Delete>"#;
 
-            assert_eq!(delete_objects(body).unwrap().keys, vec!["notes&misc.txt"]);
+            assert_eq!(keys(&delete_objects(body).unwrap()), vec!["notes&misc.txt"]);
         }
 
         #[test]
@@ -265,7 +326,7 @@ mod tests {
 
             let request = delete_objects(body).unwrap();
 
-            assert_eq!(request.keys, vec![" ", "_ ", " leading"]);
+            assert_eq!(keys(&request), vec![" ", "_ ", " leading"]);
         }
 
         #[test]
@@ -276,14 +337,110 @@ mod tests {
                 </Object>
             </Delete>"#;
 
-            assert_eq!(delete_objects(body).unwrap().keys, vec!["a.txt"]);
+            assert_eq!(keys(&delete_objects(body).unwrap()), vec!["a.txt"]);
         }
 
         #[test]
         fn should_read_a_key_split_across_an_entity_reference() {
             let body = b"<Delete><Object><Key>a&amp;b&amp;c</Key></Object></Delete>";
 
-            assert_eq!(delete_objects(body).unwrap().keys, vec!["a&b&c"]);
+            assert_eq!(keys(&delete_objects(body).unwrap()), vec!["a&b&c"]);
+        }
+
+        /// A version id turns a batch delete of that entry from "leave a delete marker"
+        /// into "remove this version", so it has to survive the parse.
+        #[test]
+        fn should_read_the_version_id_of_an_object_that_names_one() {
+            let body = br#"<Delete>
+                <Object><Key>a.txt</Key><VersionId>abc123</VersionId></Object>
+                <Object><Key>b.txt</Key></Object>
+            </Delete>"#;
+
+            let request = delete_objects(body).unwrap();
+
+            assert_eq!(request.objects[0].version_id.as_deref(), Some("abc123"));
+            assert_eq!(request.objects[1].version_id, None);
+        }
+
+        /// One entry's version id must not carry over to the next.
+        #[test]
+        fn should_not_let_a_version_id_leak_into_the_following_object() {
+            let body = br#"<Delete>
+                <Object><Key>a.txt</Key><VersionId>abc123</VersionId></Object>
+                <Object><Key>b.txt</Key></Object>
+                <Object><Key>c.txt</Key><VersionId>def456</VersionId></Object>
+            </Delete>"#;
+
+            let request = delete_objects(body).unwrap();
+            let found: Vec<Option<&str>> = request
+                .objects
+                .iter()
+                .map(|target| target.version_id.as_deref())
+                .collect();
+
+            assert_eq!(found, vec![Some("abc123"), None, Some("def456")]);
+        }
+
+        #[test]
+        fn should_treat_an_empty_version_id_as_none() {
+            let body =
+                br#"<Delete><Object><Key>a.txt</Key><VersionId></VersionId></Object></Delete>"#;
+
+            assert_eq!(delete_objects(body).unwrap().objects[0].version_id, None);
+        }
+    }
+
+    mod versioning_configuration {
+        use super::*;
+
+        #[test]
+        fn should_read_each_status_a_client_can_set() {
+            for (text, expected) in [
+                ("Enabled", VersioningStatus::Enabled),
+                ("Suspended", VersioningStatus::Suspended),
+            ] {
+                let body = format!(
+                    "<VersioningConfiguration><Status>{text}</Status></VersioningConfiguration>"
+                );
+
+                assert_eq!(versioning_configuration(body.as_bytes()).unwrap(), expected);
+            }
+        }
+
+        #[test]
+        fn should_parse_over_mfa_delete() {
+            let body = br#"<VersioningConfiguration>
+                <MfaDelete>Disabled</MfaDelete><Status>Enabled</Status>
+            </VersioningConfiguration>"#;
+
+            assert_eq!(
+                versioning_configuration(body).unwrap(),
+                VersioningStatus::Enabled
+            );
+        }
+
+        /// Defaulting a missing status would turn a client bug into silent data loss on
+        /// the next overwrite, so S3 rejects it and so does this.
+        #[test]
+        fn should_reject_a_document_with_no_status() {
+            let error =
+                versioning_configuration(b"<VersioningConfiguration></VersioningConfiguration>")
+                    .unwrap_err();
+
+            assert_eq!(error.code, "IllegalVersioningConfigurationException");
+            assert_eq!(error.status, StatusCode::BAD_REQUEST);
+        }
+
+        #[test]
+        fn should_reject_a_status_that_is_not_one_s3_defines() {
+            assert_eq!(
+                versioning_configuration(
+                    b"<VersioningConfiguration><Status>On</Status></VersioningConfiguration>"
+                )
+                .unwrap_err()
+                .code,
+                "IllegalVersioningConfigurationException"
+            );
         }
     }
 }

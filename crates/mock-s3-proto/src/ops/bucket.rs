@@ -3,11 +3,11 @@ use std::sync::Arc;
 use axum::extract::{Path, RawQuery, State};
 use axum::response::Response;
 use http::{HeaderMap, StatusCode, header};
-use mock_s3_core::{Engine, ListRequest};
+use mock_s3_core::{Engine, ListRequest, VersionListRequest};
 
 use crate::error::S3Error;
 use crate::query::Query;
-use crate::xml::ListingEcho;
+use crate::xml::{ListingEcho, VersionListingEcho};
 use crate::{response, xml};
 
 /// `PUT /{bucket}` — CreateBucket.
@@ -33,7 +33,13 @@ pub async fn create(
         return Ok(response::empty(StatusCode::OK, HeaderMap::new()));
     }
 
-    // `PUT /{bucket}?versioning` configures a bucket; it must not create one.
+    if query.has("versioning") {
+        let status = crate::parse::versioning_configuration(&body)?;
+        engine.put_bucket_versioning(&bucket, status).await?;
+        return Ok(response::empty(StatusCode::OK, HeaderMap::new()));
+    }
+
+    // `PUT /{bucket}?acl` configures a bucket; it must not create one.
     if let Some(name) = configurable(&query) {
         engine.head_bucket(&bucket).await?;
         tracing::debug!(bucket, subresource = name, "bucket configuration accepted");
@@ -60,6 +66,15 @@ pub async fn delete(
             .delete_bucket_config(&bucket, mock_s3_core::bucket_config::CORS)
             .await?;
         return Ok(response::empty(StatusCode::NO_CONTENT, HeaderMap::new()));
+    }
+
+    // There is no request that un-versions a bucket, so this is not a setting that can
+    // be cleared. Answering it is what keeps it from falling through to DeleteBucket and
+    // destroying the bucket on a request that asked for nothing of the kind.
+    if query.has("versioning") {
+        return Err(S3Error::not_implemented(
+            "clearing versioning, which S3 has no request for either",
+        ));
     }
 
     // As with PUT: `DELETE /{bucket}?cors` clears a setting, it does not delete the
@@ -103,7 +118,6 @@ const CONFIGURABLE: &[&str] = &[
     "replication",
     "requestPayment",
     "tagging",
-    "versioning",
     "website",
 ];
 
@@ -221,7 +235,7 @@ async fn subresource(
     let body = if query.has("location") {
         xml::location_constraint(engine.region())
     } else if query.has("versioning") {
-        xml::versioning_configuration()
+        xml::versioning_configuration(engine.bucket_versioning(bucket).await?)
     } else if query.has("acl") {
         xml::access_control_policy()
     } else if query.has("requestPayment") {
@@ -262,7 +276,6 @@ pub async fn get(
         return Ok(answer);
     }
 
-    let versions = query.has("versions");
     let v2 = query.get("list-type") == Some("2");
 
     let max_keys = match query.non_empty("max-keys") {
@@ -271,6 +284,10 @@ pub async fn get(
             .map_err(|_| S3Error::invalid_argument(format!("max-keys is not a number: {raw}")))?,
         None => mock_s3_core::listing::MAX_KEYS_LIMIT,
     };
+
+    if query.has("versions") {
+        return list_versions(&engine, &bucket, &query, max_keys).await;
+    }
 
     // Echoed back as the client sent it, while the engine gets the cursor inside it.
     let sent_token = query.non_empty("continuation-token");
@@ -285,9 +302,7 @@ pub async fn get(
         prefix: query.get("prefix").unwrap_or_default().to_string(),
         delimiter: query.non_empty("delimiter").map(str::to_string),
         max_keys,
-        start_after: if versions {
-            query.non_empty("key-marker").map(str::to_string)
-        } else if v2 {
+        start_after: if v2 {
             query.non_empty("start-after").map(str::to_string)
         } else {
             query.non_empty("marker").map(str::to_string)
@@ -307,12 +322,46 @@ pub async fn get(
         encoding_type: query.non_empty("encoding-type"),
         v2,
     };
-    let body = if versions {
-        xml::list_versions_result(&echo, &result)
-    } else {
-        xml::list_bucket_result(&echo, &result)
+    Ok(response::xml(
+        StatusCode::OK,
+        xml::list_bucket_result(&echo, &result),
+    ))
+}
+
+/// `GET /{bucket}?versions` — ListObjectVersions.
+///
+/// Split out because a versions page resumes from a key *and* a version of that key,
+/// which neither of the object listings has to deal with.
+async fn list_versions(
+    engine: &Engine,
+    bucket: &str,
+    query: &Query,
+    max_keys: usize,
+) -> Result<Response, S3Error> {
+    let request = VersionListRequest {
+        prefix: query.get("prefix").unwrap_or_default().to_string(),
+        delimiter: query.non_empty("delimiter").map(str::to_string),
+        max_keys,
+        key_marker: query.non_empty("key-marker").map(str::to_string),
+        version_id_marker: query.non_empty("version-id-marker").map(str::to_string),
     };
-    Ok(response::xml(StatusCode::OK, body))
+
+    let result = engine.list_object_versions(bucket, &request).await?;
+
+    let echo = VersionListingEcho {
+        bucket,
+        prefix: &request.prefix,
+        delimiter: request.delimiter.as_deref(),
+        max_keys: request.max_keys,
+        key_marker: request.key_marker.as_deref(),
+        version_id_marker: request.version_id_marker.as_deref(),
+        encoding_type: query.non_empty("encoding-type"),
+    };
+
+    Ok(response::xml(
+        StatusCode::OK,
+        xml::list_versions_result(&echo, &result),
+    ))
 }
 
 /// `POST /{bucket}` — DeleteObjects and the other bucket-level posts.
@@ -334,14 +383,22 @@ pub async fn post(
     let request = crate::parse::delete_objects(&body)?;
 
     // S3 reports per-key outcomes with a 200, so one bad key does not fail the batch.
-    let mut deleted: Vec<String> = Vec::new();
+    let mut deleted: Vec<xml::Deleted> = Vec::new();
     let mut errors: Vec<(String, &'static str, String)> = Vec::new();
-    for key in request.keys {
-        match engine.delete_object(&bucket, &key).await {
-            Ok(()) => deleted.push(key),
+    for target in request.objects {
+        match engine
+            .delete_object_version(&bucket, &target.key, target.version_id.as_deref())
+            .await
+        {
+            Ok(outcome) => deleted.push(xml::Deleted {
+                key: target.key,
+                version_id: target.version_id,
+                delete_marker: outcome.delete_marker,
+                delete_marker_version_id: outcome.version_id,
+            }),
             Err(error) => {
                 let mapped = S3Error::from(error);
-                errors.push((key, mapped.code, mapped.message));
+                errors.push((target.key, mapped.code, mapped.message));
             }
         }
     }

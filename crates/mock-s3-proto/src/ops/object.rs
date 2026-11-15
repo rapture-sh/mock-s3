@@ -69,7 +69,23 @@ pub async fn put(
 
     let mut out = HeaderMap::new();
     response::set(&mut out, header::ETAG, &quoted(&meta.etag));
+    set_version_id(&mut out, meta.version_id.as_deref());
     Ok(response::empty(StatusCode::OK, out))
+}
+
+/// Report which version a response is about.
+///
+/// Left off entirely in a bucket that was never versioned, because S3 sends it only when
+/// there is a version to name — a client that sees the header at all concludes the bucket
+/// is versioned.
+fn set_version_id(headers: &mut HeaderMap, version_id: Option<&str>) {
+    if let Some(version_id) = version_id {
+        response::set(
+            headers,
+            HeaderName::from_static(crate::error::VERSION_ID),
+            version_id,
+        );
+    }
 }
 
 /// `GET /{bucket}/{key}` — GetObject, with single-range support.
@@ -100,7 +116,9 @@ pub async fn get(
         return Ok(response::xml(StatusCode::OK, xml::object_tagging()));
     }
 
-    let object = engine.get_object(&bucket, &key).await?;
+    let object = engine
+        .get_object_version(&bucket, &key, query.non_empty("versionId"))
+        .await?;
 
     match preconditions(&headers, &object.meta) {
         Precondition::Failed => return Err(precondition_failed()),
@@ -155,9 +173,14 @@ pub async fn get(
 pub async fn head(
     State(engine): State<Arc<Engine>>,
     Path((bucket, key)): Path<(String, String)>,
+    RawQuery(raw): RawQuery,
     headers: HeaderMap,
 ) -> Result<Response, S3Error> {
-    let meta = engine.head_object(&bucket, &key).await?;
+    let query = Query::parse(raw.as_deref());
+
+    let meta = engine
+        .head_object_version(&bucket, &key, query.non_empty("versionId"))
+        .await?;
 
     match preconditions(&headers, &meta) {
         Precondition::Failed => return Err(precondition_failed()),
@@ -191,8 +214,20 @@ pub async fn delete(
         return Ok(response::empty(StatusCode::NO_CONTENT, HeaderMap::new()));
     }
 
-    engine.delete_object(&bucket, &key).await?;
-    Ok(response::empty(StatusCode::NO_CONTENT, HeaderMap::new()))
+    let outcome = engine
+        .delete_object_version(&bucket, &key, query.non_empty("versionId"))
+        .await?;
+
+    let mut out = HeaderMap::new();
+    set_version_id(&mut out, outcome.version_id.as_deref());
+    if outcome.delete_marker {
+        response::set(
+            &mut out,
+            HeaderName::from_static(crate::error::DELETE_MARKER),
+            "true",
+        );
+    }
+    Ok(response::empty(StatusCode::NO_CONTENT, out))
 }
 
 /// `POST /{bucket}/{key}` — the multipart lifecycle.
@@ -228,10 +263,16 @@ pub async fn post(
 
         let meta = engine.complete_upload(&bucket, upload_id, &listed).await?;
 
-        return Ok(response::xml(
+        let mut out = HeaderMap::new();
+        response::set(&mut out, header::CONTENT_TYPE, "application/xml");
+        set_version_id(&mut out, meta.version_id.as_deref());
+
+        return Ok((
             StatusCode::OK,
+            out,
             xml::complete_multipart_upload(&bucket, &meta.key, &meta.etag),
-        ));
+        )
+            .into_response());
     }
 
     Err(S3Error::not_implemented("this object operation"))
@@ -250,9 +291,17 @@ async fn copy_object(
     headers: &HeaderMap,
 ) -> Result<Response, S3Error> {
     let decoded = percent_encoding::percent_decode_str(source).decode_utf8_lossy();
+
+    // A source may name a version: `/bucket/key?versionId=...`. Without this, copying
+    // from a versioned bucket would silently take the current version instead of the one
+    // asked for, which is the kind of divergence nothing visibly fails on.
+    let (path, source_version) = match decoded.split_once("?versionId=") {
+        Some((path, version)) => (path, Some(version)),
+        None => (decoded.as_ref(), None),
+    };
+
     let (source_bucket, source_key) =
-        decoded
-            .trim_start_matches('/')
+        path.trim_start_matches('/')
             .split_once('/')
             .ok_or_else(|| {
                 S3Error::invalid_argument(format!(
@@ -260,7 +309,9 @@ async fn copy_object(
                 ))
             })?;
 
-    let object = engine.get_object(source_bucket, source_key).await?;
+    let object = engine
+        .get_object_version(source_bucket, source_key, source_version)
+        .await?;
 
     let replacing = headers
         .get("x-amz-metadata-directive")
@@ -283,12 +334,26 @@ async fn copy_object(
         }
     };
 
+    let source_version_id = object.meta.version_id.clone();
     let meta = engine.put_object(bucket, key, object.body, options).await?;
 
-    Ok(response::xml(
+    let mut out = HeaderMap::new();
+    response::set(&mut out, header::CONTENT_TYPE, "application/xml");
+    set_version_id(&mut out, meta.version_id.as_deref());
+    if let Some(version_id) = &source_version_id {
+        response::set(
+            &mut out,
+            HeaderName::from_static("x-amz-copy-source-version-id"),
+            version_id,
+        );
+    }
+
+    Ok((
         StatusCode::OK,
+        out,
         xml::copy_object_result(&meta.etag, &meta.last_modified),
-    ))
+    )
+        .into_response())
 }
 
 /// `OPTIONS /{bucket}/{key}` — a CORS preflight. The key plays no part: CORS is
@@ -411,6 +476,7 @@ fn object_headers(meta: &ObjectMeta, checksums: Checksums) -> HeaderMap {
         HeaderName::from_static("accept-ranges"),
         "bytes",
     );
+    set_version_id(&mut headers, meta.version_id.as_deref());
     // Kept verbatim on the way in, handed back verbatim on the way out.
     for (name, value) in &meta.system_headers {
         if checksums == Checksums::Omit && name.starts_with("x-amz-checksum-") {
@@ -565,6 +631,7 @@ mod tests {
                     .expect("a valid test timestamp"),
                 content_type: "text/plain".into(),
                 user_metadata: Default::default(),
+                version_id: None,
                 system_headers: Default::default(),
             }
         }
