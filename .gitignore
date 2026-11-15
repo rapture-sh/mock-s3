@@ -1,0 +1,29 @@
+# rust
+/target
+**/*.rs.bk
+*.pdb
+
+# console frontend
+/web/node_modules
+/web/dist
+/web/.vite
+
+# object data (--data defaults to ./data outside the container)
+/data
+
+# env files
+.env*
+
+# editors and os
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# typescript
+*.tsbuildinfo
+
+# local claude code settings
+.claude/settings.local.json
