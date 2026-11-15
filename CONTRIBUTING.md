@@ -1,8 +1,8 @@
 # Contributing to mock-s3
 
-Thanks for being here. mock-s3 is pre-release, which means there is a lot of
-obvious work available and you do not need permission to start. Open an issue if
-you want to talk something through first.
+Thanks for being here. You do not need permission to start — open an issue if you want
+to talk something through first. The operations that currently answer
+`501 NotImplemented`, listed in the README, are the most useful place to begin.
 
 ## The contract
 

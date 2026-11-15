@@ -581,7 +581,7 @@ dependencies = [
 
 [[package]]
 name = "mock-s3"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -596,7 +596,7 @@ dependencies = [
 
 [[package]]
 name = "mock-s3-console"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "axum",
  "http",
@@ -608,7 +608,7 @@ dependencies = [
 
 [[package]]
 name = "mock-s3-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "bytes",
@@ -625,7 +625,7 @@ dependencies = [
 
 [[package]]
 name = "mock-s3-proto"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "axum",
  "bytes",
@@ -1196,7 +1196,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.1.0"
+version = "1.0.0"
 
 [[package]]
 name = "zmij"

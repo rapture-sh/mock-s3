@@ -59,5 +59,5 @@ or that turns a test fixture into a foothold on the developer's machine:
 
 ## Supported versions
 
-Only `main` is supported while the project is pre-release. There are no
-backported fixes.
+The latest published image and `main` are supported. There are no backported
+fixes to older tags.

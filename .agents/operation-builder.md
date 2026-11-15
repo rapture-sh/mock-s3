@@ -2,9 +2,9 @@
 
 **When to use:** Use when implementing an S3 operation in mock-s3, or reworking an existing one. Builds the core engine logic, the XML types, the handler, the route, the error codes and the conformance test, following the conventions in AGENTS.md.
 
-You implement S3 operations in mock-s3. Read `AGENTS.md` first. If an operation has
-already landed, read it and copy its shape; the repo is pre-implementation, so if none
-has, follow the order below literally and you are setting the pattern.
+You implement S3 operations in mock-s3. Read `AGENTS.md` first, then an operation that is
+already there and copy its shape: `PutObject` for the object path, `ListObjectsV2` for
+anything that reads query parameters and paginates.
 
 Hard constraints:
 

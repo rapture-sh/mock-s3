@@ -20,12 +20,6 @@ rebuilt around a standalone protocol engine and extended well past the original 
 buckets per instance, multipart uploads, per-bucket fault injection and a console. Kywi
 now consumes it like everyone else.
 
-**Status: pre-release.** Buckets and single-part objects work end to end against the AWS
-SDKs and the AWS CLI. Multipart uploads, `CopyObject`, `DeleteObjects`, fault injection
-and the web console are not built yet — see
-[Supported operations](#supported-operations). The admin API will break without ceremony
-until `0.1.0`.
-
 
 Running it
 ----------
@@ -36,6 +30,9 @@ docker run --rm -p 9000:9000 -p 9001:9001 -v mock-s3-data:/data rapturesh/mock-s
 
 S3 API on `:9000`, web console on `:9001`. Objects live in the volume mounted at
 `/data`, so they survive a container restart and you can inspect them from the host.
+
+The console is optional — it is a viewer, and `--no-console` drops it without touching
+the S3 API.
 
 ```yaml
 services:
@@ -167,18 +164,18 @@ Supported operations
 | Bucket | `CreateBucket`, `DeleteBucket`, `HeadBucket` | working |
 | Bucket | `ListObjectsV2`, `ListObjects` | working, with prefix, delimiter, `max-keys` and continuation tokens |
 | Bucket | `GetBucketLocation`, `GetBucketVersioning` | working |
-| Bucket | `DeleteObjects` | planned |
+| Bucket | `DeleteObjects` | `501 NotImplemented` |
 | Object | `PutObject`, `GetObject`, `HeadObject`, `DeleteObject` | working |
 | Object | `GetObject` with a single `Range` | working |
-| Object | `CopyObject` | planned |
-| Multipart | `CreateMultipartUpload` … `CompleteMultipartUpload` | planned |
+| Object | `CopyObject` | `501 NotImplemented` |
+| Multipart | `CreateMultipartUpload` … `CompleteMultipartUpload` | `501 NotImplemented` |
 
-Anything marked planned answers with `501 NotImplemented` rather than pretending to
-succeed, so a test that needs it fails loudly instead of passing against a lie.
+The operations that answer `501` do exactly that rather than pretending to succeed, so a
+client that needs one fails loudly instead of passing against a lie.
 
-Multipart is the most important of those: SDKs switch to it automatically above a size
-threshold with no change in caller code, so until it lands, uploading a large file through
-an SDK will fail.
+Multipart is the one to know about: SDKs switch to it automatically above a size
+threshold, usually around 8 MB, with no change in caller code. Uploading a file larger
+than that through an SDK gets a `501` until it is implemented.
 
 Working today alongside the operations: user metadata round-tripping through
 `x-amz-meta-*`, content type preservation, MD5 ETags, and bucket name validation that
@@ -216,8 +213,8 @@ Layout, conventions, testing and style are in [AGENTS.md](AGENTS.md).
 Contributions
 -------------
 
-Welcome, and you do not need permission to start. The pre-release state means there is
-plenty of obvious work available.
+Welcome, and you do not need permission to start. The `501` rows in the table above are
+the most useful place to begin.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) first. The rule that
 outranks the rest: match real S3, or document the divergence. Commits are `feat:` or

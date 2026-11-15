@@ -38,9 +38,11 @@ Everything in `AGENTS.md` applies. The points worth repeating:
   in a mounted volume (`--data`, default `/data` in the image) so state survives a
   container restart and can be inspected; `--in-memory` is the opt-out. Nothing about it
   is durable, and no change should imply otherwise.
-- The repo is pre-implementation, so `AGENTS.md` describes conventions new code must
-  follow rather than code that already exists. Do not assume a file is there because it
-  is named — check.
+- `AGENTS.md` names some things that have no code yet, so it is the contract for new work
+  as much as a map of existing work. Do not assume a file is there because it is named —
+  check.
+- The console is a viewer and is optional. `--no-console` turns it off; no S3 behaviour
+  may depend on it running.
 
 Agent playbooks live in `.agents/`: `operation-builder` implements an S3 operation end
 to end, `fidelity-auditor` checks a diff for divergence from real S3 and for broken
