@@ -860,4 +860,274 @@ mod tests {
             assert!(location_constraint("eu-west-2").contains(">eu-west-2<"));
         }
     }
+
+    mod versioning_configuration {
+        use super::*;
+
+        /// An SDK reads the empty document as `None`, which is not `Suspended` — a
+        /// suspended bucket still holds the versions it collected.
+        #[test]
+        fn should_omit_the_status_for_a_bucket_that_was_never_configured() {
+            let body = versioning_configuration(VersioningStatus::Unversioned);
+
+            assert!(!body.contains("<Status>"), "{body}");
+        }
+
+        #[test]
+        fn should_name_each_status_a_bucket_can_be_set_to() {
+            assert!(
+                versioning_configuration(VersioningStatus::Enabled)
+                    .contains("<Status>Enabled</Status>")
+            );
+            assert!(
+                versioning_configuration(VersioningStatus::Suspended)
+                    .contains("<Status>Suspended</Status>")
+            );
+        }
+    }
+
+    mod list_versions_result {
+        use super::*;
+        use mock_s3_core::ObjectVersion;
+
+        fn echo<'a>(bucket: &'a str) -> VersionListingEcho<'a> {
+            VersionListingEcho {
+                bucket,
+                prefix: "",
+                delimiter: None,
+                max_keys: 1000,
+                key_marker: None,
+                version_id_marker: None,
+                encoding_type: None,
+            }
+        }
+
+        fn version(key: &str, version_id: &str, is_latest: bool) -> ObjectVersion {
+            ObjectVersion {
+                key: key.to_string(),
+                version_id: version_id.to_string(),
+                is_latest,
+                last_modified: at(0),
+                meta: Some(ObjectMeta {
+                    key: key.to_string(),
+                    size: 5,
+                    etag: "abc".into(),
+                    last_modified: at(0),
+                    content_type: "text/plain".into(),
+                    user_metadata: Default::default(),
+                    version_id: Some(version_id.to_string()),
+                    system_headers: Default::default(),
+                }),
+            }
+        }
+
+        fn marker(key: &str, version_id: &str, is_latest: bool) -> ObjectVersion {
+            ObjectVersion {
+                key: key.to_string(),
+                version_id: version_id.to_string(),
+                is_latest,
+                last_modified: at(0),
+                meta: None,
+            }
+        }
+
+        #[test]
+        fn should_write_a_version_with_the_elements_s3_sends() {
+            let result = VersionListResult {
+                versions: vec![version("notes.txt", "v1", true)],
+                ..Default::default()
+            };
+
+            let body = list_versions_result(&echo("my-bucket"), &result);
+
+            assert!(body.contains("<Key>notes.txt</Key>"), "{body}");
+            assert!(body.contains("<VersionId>v1</VersionId>"));
+            assert!(body.contains("<IsLatest>true</IsLatest>"));
+            assert!(body.contains("<ETag>&quot;abc&quot;</ETag>"));
+            assert!(body.contains("<Size>5</Size>"));
+            assert!(body.contains("<StorageClass>STANDARD</StorageClass>"));
+        }
+
+        /// A delete marker has no payload, so S3 sends neither an ETag nor a size for
+        /// one. An SDK that found a zero size would report the object as empty rather
+        /// than deleted.
+        #[test]
+        fn should_write_a_delete_marker_without_an_etag_or_a_size() {
+            let result = VersionListResult {
+                versions: vec![marker("notes.txt", "v2", true)],
+                ..Default::default()
+            };
+
+            let body = list_versions_result(&echo("my-bucket"), &result);
+
+            assert!(body.contains("<DeleteMarker>"), "{body}");
+            assert!(!body.contains("<ETag>"));
+            assert!(!body.contains("<Size>"));
+        }
+
+        /// Versions and markers paginate as one sequence, so they have to be written in
+        /// listing order rather than grouped by kind.
+        #[test]
+        fn should_interleave_markers_and_versions_in_listing_order() {
+            let result = VersionListResult {
+                versions: vec![
+                    marker("notes.txt", "v3", true),
+                    version("notes.txt", "v2", false),
+                    marker("notes.txt", "v1", false),
+                ],
+                ..Default::default()
+            };
+
+            let body = list_versions_result(&echo("my-bucket"), &result);
+
+            let mut order: Vec<(usize, &str)> = body
+                .match_indices("<DeleteMarker>")
+                .map(|(at, _)| (at, "marker"))
+                .chain(
+                    body.match_indices("<Version>")
+                        .map(|(at, _)| (at, "version")),
+                )
+                .collect();
+            order.sort();
+
+            let kinds: Vec<&str> = order.into_iter().map(|(_, kind)| kind).collect();
+            assert_eq!(kinds, vec!["marker", "version", "marker"], "{body}");
+        }
+
+        #[test]
+        fn should_echo_both_markers_a_request_resumed_from() {
+            let result = VersionListResult::default();
+            let mut sent = echo("my-bucket");
+            sent.key_marker = Some("notes.txt");
+            sent.version_id_marker = Some("v1");
+
+            let body = list_versions_result(&sent, &result);
+
+            assert!(body.contains("<KeyMarker>notes.txt</KeyMarker>"), "{body}");
+            assert!(body.contains("<VersionIdMarker>v1</VersionIdMarker>"));
+        }
+
+        /// A page that ends on a common prefix has no version to resume from, and S3
+        /// reports `null` there. Both markers or neither: a client feeds both back, and
+        /// some validate their own parameters before sending.
+        #[test]
+        fn should_report_a_null_version_marker_when_a_page_ends_on_a_prefix() {
+            let result = VersionListResult {
+                common_prefixes: vec!["photos/".into()],
+                is_truncated: true,
+                next_key_marker: Some("photos/".into()),
+                next_version_id_marker: None,
+                ..Default::default()
+            };
+
+            let body = list_versions_result(&echo("my-bucket"), &result);
+
+            assert!(
+                body.contains("<NextKeyMarker>photos/</NextKeyMarker>"),
+                "{body}"
+            );
+            assert!(body.contains("<NextVersionIdMarker>null</NextVersionIdMarker>"));
+        }
+
+        #[test]
+        fn should_omit_both_next_markers_when_the_page_is_the_last_one() {
+            let result = VersionListResult {
+                versions: vec![version("notes.txt", "v1", true)],
+                ..Default::default()
+            };
+
+            let body = list_versions_result(&echo("my-bucket"), &result);
+
+            assert!(!body.contains("<NextKeyMarker>"), "{body}");
+            assert!(!body.contains("<NextVersionIdMarker>"));
+        }
+
+        #[test]
+        fn should_url_encode_a_key_when_the_request_asked_for_it() {
+            let result = VersionListResult {
+                versions: vec![version("photos/a b.jpg", "v1", true)],
+                ..Default::default()
+            };
+            let mut sent = echo("my-bucket");
+            sent.encoding_type = Some("url");
+
+            let body = list_versions_result(&sent, &result);
+
+            assert!(body.contains("<EncodingType>url</EncodingType>"), "{body}");
+            // S3 leaves the path separator alone even when it encodes everything else.
+            assert!(body.contains("<Key>photos/a%20b.jpg</Key>"));
+        }
+
+        #[test]
+        fn should_escape_a_key_containing_xml_syntax() {
+            let result = VersionListResult {
+                versions: vec![version("a&b.txt", "v1", true)],
+                ..Default::default()
+            };
+
+            let body = list_versions_result(&echo("my-bucket"), &result);
+
+            assert!(body.contains("<Key>a&amp;b.txt</Key>"), "{body}");
+        }
+    }
+
+    mod delete_result {
+        use super::*;
+
+        fn deleted(key: &str) -> Deleted {
+            Deleted {
+                key: key.to_string(),
+                version_id: None,
+                delete_marker: false,
+                delete_marker_version_id: None,
+            }
+        }
+
+        /// A batch delete in an unversioned bucket reports the key alone. An SDK that
+        /// found `DeleteMarker` there would report every delete as a marker.
+        #[test]
+        fn should_report_a_key_alone_when_nothing_was_versioned() {
+            let body = delete_result(&[deleted("notes.txt")], &[], false);
+
+            assert!(
+                body.contains("<Deleted><Key>notes.txt</Key></Deleted>"),
+                "{body}"
+            );
+        }
+
+        #[test]
+        fn should_report_the_marker_it_created_for_a_key_with_no_version_named() {
+            let entry = Deleted {
+                delete_marker: true,
+                delete_marker_version_id: Some("v9".into()),
+                ..deleted("notes.txt")
+            };
+
+            let body = delete_result(&[entry], &[], false);
+
+            assert!(body.contains("<DeleteMarker>true</DeleteMarker>"), "{body}");
+            assert!(body.contains("<DeleteMarkerVersionId>v9</DeleteMarkerVersionId>"));
+            assert!(!body.contains("<VersionId>"));
+        }
+
+        #[test]
+        fn should_echo_the_version_a_request_named() {
+            let entry = Deleted {
+                version_id: Some("v1".into()),
+                ..deleted("notes.txt")
+            };
+
+            let body = delete_result(&[entry], &[], false);
+
+            assert!(body.contains("<VersionId>v1</VersionId>"), "{body}");
+            assert!(!body.contains("<DeleteMarker>"));
+        }
+
+        #[test]
+        fn should_report_nothing_deleted_in_quiet_mode() {
+            let body = delete_result(&[deleted("notes.txt")], &[], true);
+
+            assert!(!body.contains("<Deleted>"), "{body}");
+        }
+    }
 }

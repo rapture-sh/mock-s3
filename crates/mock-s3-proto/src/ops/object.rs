@@ -290,15 +290,25 @@ async fn copy_object(
     source: &str,
     headers: &HeaderMap,
 ) -> Result<Response, S3Error> {
-    let decoded = percent_encoding::percent_decode_str(source).decode_utf8_lossy();
-
     // A source may name a version: `/bucket/key?versionId=...`. Without this, copying
     // from a versioned bucket would silently take the current version instead of the one
     // asked for, which is the kind of divergence nothing visibly fails on.
-    let (path, source_version) = match decoded.split_once("?versionId=") {
+    //
+    // Split before decoding, never after. `?` is a legal character in an object key and
+    // arrives percent-encoded; decoding first would turn the key `weird?versionId=x` into
+    // a copy of `weird` at version `x`.
+    let (raw_path, raw_version) = match source.split_once("?versionId=") {
         Some((path, version)) => (path, Some(version)),
-        None => (decoded.as_ref(), None),
+        None => (source, None),
     };
+
+    let decode = |value: &str| {
+        percent_encoding::percent_decode_str(value)
+            .decode_utf8_lossy()
+            .into_owned()
+    };
+    let path = decode(raw_path);
+    let source_version = raw_version.map(decode);
 
     let (source_bucket, source_key) =
         path.trim_start_matches('/')
@@ -310,7 +320,7 @@ async fn copy_object(
             })?;
 
     let object = engine
-        .get_object_version(source_bucket, source_key, source_version)
+        .get_object_version(source_bucket, source_key, source_version.as_deref())
         .await?;
 
     let replacing = headers

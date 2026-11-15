@@ -4,7 +4,7 @@
 # produces a failure not listed here is a regression and `run.sh` exits non-zero for it.
 #
 # Expect a long list. The suite is written against real S3 with multiple accounts, and
-# mock-s3 deliberately has no account model, no versioning, no lifecycle and no policy
+# mock-s3 deliberately has no account model, no lifecycle and no policy
 # enforcement — so every test covering those is expected to fail and belongs here.
 #
 # Seed or refresh it after a run:

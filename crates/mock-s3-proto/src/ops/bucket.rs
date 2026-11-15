@@ -338,12 +338,24 @@ async fn list_versions(
     query: &Query,
     max_keys: usize,
 ) -> Result<Response, S3Error> {
+    let key_marker = query.non_empty("key-marker").map(str::to_string);
+    let version_id_marker = query.non_empty("version-id-marker").map(str::to_string);
+
+    // A version id is only meaningful against a key. Accepting it alone would let a
+    // client with that bug pass here and fail against AWS, which is the one thing a mock
+    // must not do.
+    if key_marker.is_none() && version_id_marker.is_some() {
+        return Err(S3Error::invalid_argument(
+            "A version-id marker cannot be specified without a key marker.",
+        ));
+    }
+
     let request = VersionListRequest {
         prefix: query.get("prefix").unwrap_or_default().to_string(),
         delimiter: query.non_empty("delimiter").map(str::to_string),
         max_keys,
-        key_marker: query.non_empty("key-marker").map(str::to_string),
-        version_id_marker: query.non_empty("version-id-marker").map(str::to_string),
+        key_marker,
+        version_id_marker,
     };
 
     let result = engine.list_object_versions(bucket, &request).await?;

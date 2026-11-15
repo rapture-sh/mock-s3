@@ -738,6 +738,155 @@ mod delete_bucket {
     }
 }
 
+mod head_object_on_a_deleted_key {
+    use super::*;
+
+    /// HEAD is the one verb with no error body, so the header is all a client has to
+    /// tell a deleted key from one that was never written.
+    #[tokio::test]
+    async fn should_report_the_delete_marker_in_the_headers() {
+        let h = versioned().await;
+        put(&h, "notes.txt", "one").await;
+        let marker =
+            h.s3.delete_object()
+                .bucket(BUCKET)
+                .key("notes.txt")
+                .send()
+                .await
+                .unwrap()
+                .version_id
+                .unwrap();
+
+        let error =
+            h.s3.head_object()
+                .bucket(BUCKET)
+                .key("notes.txt")
+                .send()
+                .await
+                .unwrap_err();
+
+        let response = error.raw_response().expect("the error carries a response");
+        assert_eq!(response.status().as_u16(), 404);
+        assert_eq!(response.headers().get("x-amz-delete-marker"), Some("true"));
+        assert_eq!(
+            response.headers().get("x-amz-version-id"),
+            Some(marker.as_str())
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_head_of_a_delete_marker_named_by_its_id() {
+        let h = versioned().await;
+        put(&h, "notes.txt", "one").await;
+        let marker =
+            h.s3.delete_object()
+                .bucket(BUCKET)
+                .key("notes.txt")
+                .send()
+                .await
+                .unwrap()
+                .version_id
+                .unwrap();
+
+        let error =
+            h.s3.head_object()
+                .bucket(BUCKET)
+                .key("notes.txt")
+                .version_id(&marker)
+                .send()
+                .await
+                .unwrap_err();
+
+        let response = error.raw_response().expect("the error carries a response");
+        assert_eq!(response.status().as_u16(), 405);
+        assert_eq!(response.headers().get("x-amz-delete-marker"), Some("true"));
+    }
+}
+
+mod version_markers {
+    use super::*;
+
+    /// A version id is only meaningful against a key. S3 rejects one sent alone, so a
+    /// client with that bug has to fail here too rather than pass and fail on AWS.
+    #[tokio::test]
+    async fn should_reject_a_version_id_marker_sent_without_a_key_marker() {
+        let h = versioned().await;
+        put(&h, "notes.txt", "one").await;
+
+        let error =
+            h.s3.list_object_versions()
+                .bucket(BUCKET)
+                .version_id_marker("v1")
+                .send()
+                .await
+                .unwrap_err()
+                .into_service_error();
+
+        assert_eq!(error.code(), Some("InvalidArgument"));
+    }
+
+    /// A page can end on a common prefix, which has no version to resume from. Feeding
+    /// the markers back has to continue the listing rather than restart or stall it.
+    #[tokio::test]
+    async fn should_resume_a_page_that_ended_on_a_common_prefix() {
+        let h = versioned().await;
+        put(&h, "photos/one.jpg", "one").await;
+        put(&h, "photos/two.jpg", "two").await;
+        put(&h, "zebra.txt", "three").await;
+
+        let first =
+            h.s3.list_object_versions()
+                .bucket(BUCKET)
+                .delimiter("/")
+                .max_keys(1)
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(first.is_truncated(), Some(true));
+        assert_eq!(first.common_prefixes()[0].prefix(), Some("photos/"));
+        assert_eq!(first.next_key_marker(), Some("photos/"));
+
+        let second =
+            h.s3.list_object_versions()
+                .bucket(BUCKET)
+                .delimiter("/")
+                .max_keys(1)
+                .set_key_marker(first.next_key_marker.clone())
+                .set_version_id_marker(first.next_version_id_marker.clone())
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(second.is_truncated(), Some(false));
+        assert_eq!(second.versions().len(), 1);
+        assert_eq!(second.versions()[0].key(), Some("zebra.txt"));
+    }
+}
+
+mod copy_source_parsing {
+    use super::*;
+
+    /// `?` is a legal character in an object key and the SDK sends it percent-encoded.
+    /// Splitting the version off after decoding would read this key as `weird` at
+    /// version `x` and copy the wrong thing — or nothing.
+    #[tokio::test]
+    async fn should_not_mistake_a_question_mark_in_a_key_for_a_version() {
+        let h = versioned().await;
+        put(&h, "weird?versionId=x", "the real object").await;
+
+        h.s3.copy_object()
+            .bucket(BUCKET)
+            .key("copy.txt")
+            .copy_source(format!("{BUCKET}/weird%3FversionId%3Dx"))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(body_of(&h, "copy.txt", None).await, "the real object");
+    }
+}
+
 mod on_disk {
     use super::*;
 

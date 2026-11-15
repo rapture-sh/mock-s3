@@ -225,14 +225,15 @@ calls them too. A delete then leaves a marker rather than removing anything, so 
 reads as a `404` carrying `x-amz-delete-marker` while its earlier versions stay readable
 by id — and deleting the marker puts the object back.
 
-Two divergences worth knowing, both because mock-s3 cannot tell what real S3 can:
+Two divergences worth knowing:
 
 - A `versionId` that does not exist answers `404 NoSuchVersion`. Real S3 separates a
   malformed id (`400 InvalidArgument`) from a well-formed one that names nothing; version
   ids here are opaque, so there is no malformed to recognise.
-- A `PUT` into a suspended bucket does not send `x-amz-version-id`. The write is the
-  `null` version either way, and leaving the header off is the clearer signal that
-  nothing new was kept.
+- `DELETE /{bucket}?versioning` answers `501 NotImplemented`. S3 has no request that
+  un-versions a bucket, so there is nothing to match; answering it explicitly is what
+  stops it falling through to `DeleteBucket` and destroying a bucket on a request that
+  asked for nothing of the kind.
 
 **Not implemented:** `UploadPartCopy`, MFA delete, and real ACL or policy enforcement.
 Anything genuinely missing answers `501 NotImplemented` rather than pretending to

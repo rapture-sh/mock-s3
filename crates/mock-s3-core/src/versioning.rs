@@ -33,6 +33,15 @@
 //! One invariant holds the design together: **a key has at most one null entry**, either
 //! the object at `objects/<key>` or a delete marker with the id `null`, never both.
 //! Writing one removes the other.
+//!
+//! The cost of having no index: finding a key's *current* version means reading the
+//! bucket's history, so a `GET` with no version id in a versioned bucket lists the
+//! bucket — on the disk backend, one sidecar read per object. A request that names a
+//! version id does not, because the id gives the storage key directly. Resolving the
+//! current version cheaply would need a prefix listing on the
+//! [`Store`](crate::Store) trait; until something needs it, a mock sized for a test
+//! suite does not pay for the index. A bucket that was never versioned takes none of
+//! this: it has one object per key and skips the whole path.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -151,12 +160,14 @@ fn marker_storage_key(version_id: &str, key: &str) -> String {
 /// Split a hidden storage key back into the version id and the key a client asked for.
 ///
 /// Returns `None` for anything not under `prefix`, which is how multipart parts and
-/// configuration documents are passed over.
+/// configuration documents are passed over, and for a recovered key that is itself
+/// hidden — a client may legally write `.mock-s3/anything`, and a version of it must stay
+/// as invisible as the object would have been.
 fn split_storage_key<'key>(storage_key: &'key str, prefix: &str) -> Option<(&'key str, &'key str)> {
     let rest = storage_key.strip_prefix(prefix)?;
     let (version_id, key) = rest.split_once('/')?;
 
-    if version_id.is_empty() || key.is_empty() {
+    if version_id.is_empty() || key.is_empty() || bucket_config::is_hidden(key) {
         return None;
     }
     Some((version_id, key))
@@ -452,11 +463,19 @@ impl Engine {
         let status = self.versioning_status(bucket).await?;
 
         if let Some(wanted) = version_id {
-            if !status.is_configured() && wanted != NULL_VERSION_ID {
-                return Err(Error::NoSuchVersion {
-                    key: key.to_string(),
-                    version_id: wanted.to_string(),
-                });
+            // A bucket that was never versioned has no version ids to report, so naming
+            // the null version is an ordinary delete and the outcome carries nothing. A
+            // client that saw a version id come back here would conclude the bucket was
+            // versioned.
+            if !status.is_configured() {
+                if wanted != NULL_VERSION_ID {
+                    return Err(Error::NoSuchVersion {
+                        key: key.to_string(),
+                        version_id: wanted.to_string(),
+                    });
+                }
+                self.store.delete_object(bucket, key).await?;
+                return Ok(DeleteOutcome::default());
             }
             return self.delete_one_version(bucket, key, wanted).await;
         }
@@ -555,14 +574,20 @@ impl Engine {
         let status = self.versioning_status(bucket).await?;
 
         if !status.keeps_versions() {
-            let meta = self.store.put_object(bucket, key, body, options).await?;
+            let mut meta = self.store.put_object(bucket, key, body, options).await?;
 
-            // The new null version supersedes a null delete marker, and only one of the
-            // two may exist at a time.
             if status.is_configured() {
+                // The new null version supersedes a null delete marker, and only one of
+                // the two may exist at a time.
                 self.store
                     .delete_object(bucket, &marker_storage_key(NULL_VERSION_ID, key))
                     .await?;
+
+                // A suspended write *is* a version — the null one — so it is reported
+                // like any other. A delete into a suspended bucket reports `null` the
+                // same way, and the two have to agree: a client that reads a version id
+                // from one and not the other cannot tell what it is looking at.
+                meta.version_id = Some(NULL_VERSION_ID.to_string());
             }
             return Ok(meta);
         }
@@ -944,7 +969,14 @@ mod tests {
                 .put_bucket_versioning("suspended", VersioningStatus::Suspended)
                 .await
                 .unwrap();
-            put(&engine, "suspended", "notes.txt", "two").await;
+            // A suspended write is still a version — the null one — and is reported as
+            // such, exactly as a suspended delete reports the null marker it inserts.
+            assert_eq!(
+                put(&engine, "suspended", "notes.txt", "two")
+                    .await
+                    .as_deref(),
+                Some(NULL_VERSION_ID)
+            );
             put(&engine, "suspended", "notes.txt", "three").await;
 
             let ids: Vec<String> = engine
@@ -1160,6 +1192,83 @@ mod tests {
             let engine = engine("missing").await;
 
             assert!(engine.delete_object("missing", "notes.txt").await.is_ok());
+        }
+
+        /// A bucket that was never versioned has no version ids to report. A client that
+        /// saw one come back would conclude the bucket was versioned.
+        #[tokio::test]
+        async fn should_report_no_version_when_an_unversioned_bucket_is_sent_the_null_id() {
+            let engine = engine("plainnull").await;
+            put(&engine, "plainnull", "notes.txt", "one").await;
+
+            let outcome = engine
+                .delete_object_version("plainnull", "notes.txt", Some(NULL_VERSION_ID))
+                .await
+                .unwrap();
+
+            assert_eq!(outcome.version_id, None);
+            assert!(!outcome.delete_marker);
+            assert!(matches!(
+                engine
+                    .get_object("plainnull", "notes.txt")
+                    .await
+                    .unwrap_err(),
+                Error::NoSuchKey(_)
+            ));
+        }
+    }
+
+    mod hidden_keys {
+        use super::*;
+
+        /// A client may legally write a key under the hidden prefix. A version of one has
+        /// to stay as invisible as the object itself would have been, or enabling
+        /// versioning would start exposing mock-s3's own bookkeeping namespace.
+        #[tokio::test]
+        async fn should_keep_a_version_of_a_hidden_key_out_of_every_listing() {
+            let engine = engine("sneaky").await;
+            engine
+                .put_bucket_versioning("sneaky", VersioningStatus::Enabled)
+                .await
+                .unwrap();
+
+            put(&engine, "sneaky", ".mock-s3/markers/forged/notes.txt", "x").await;
+            put(&engine, "sneaky", "notes.txt", "real").await;
+
+            let keys: Vec<String> = engine
+                .list_objects("sneaky", &crate::ListRequest::default())
+                .await
+                .unwrap()
+                .objects
+                .into_iter()
+                .map(|meta| meta.key)
+                .collect();
+            assert_eq!(keys, vec!["notes.txt".to_string()]);
+
+            let versioned: Vec<String> = engine
+                .all_versions("sneaky")
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|version| version.key)
+                .collect();
+            assert_eq!(versioned, vec!["notes.txt".to_string()]);
+        }
+
+        /// The same key written while the bucket was unversioned must not be mistaken for
+        /// a delete marker once versioning is turned on.
+        #[tokio::test]
+        async fn should_not_let_a_forged_marker_key_hide_a_real_object() {
+            let engine = engine("forged").await;
+            put(&engine, "forged", ".mock-s3/markers/aaa/notes.txt", "x").await;
+            put(&engine, "forged", "notes.txt", "real").await;
+
+            engine
+                .put_bucket_versioning("forged", VersioningStatus::Enabled)
+                .await
+                .unwrap();
+
+            assert_eq!(body_of(&engine, "forged", "notes.txt", None).await, "real");
         }
     }
 
