@@ -1,0 +1,18 @@
+[package]
+name = "mock-s3-proto"
+description = "The S3 HTTP wire protocol for mock-s3: routing, XML and error codes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+mock-s3-core = { workspace = true }
+
+axum = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+http = { workspace = true }
+percent-encoding = { workspace = true }
+tracing = { workspace = true }
