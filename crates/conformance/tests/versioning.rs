@@ -152,6 +152,28 @@ mod put_object {
         assert_eq!(body_of(&h, "notes.txt", None).await, "before");
     }
 
+    /// A suspended write stores the null version, so reporting `null` reads as the
+    /// consistent choice — a suspended *delete* does report it. Real S3 does not, and
+    /// ceph/s3-tests asserts it: "for versioning-suspended-bucket, no version-id should
+    /// return". This test is here so the reasoning does not win a second time.
+    #[tokio::test]
+    async fn should_not_report_a_version_for_a_write_into_a_suspended_bucket() {
+        let h = versioned().await;
+        enable(&h, BucketVersioningStatus::Suspended).await;
+
+        assert_eq!(put(&h, "notes.txt", "one").await, None);
+
+        // The delete is the asymmetric half, and it is the half that reports `null`.
+        let deleted =
+            h.s3.delete_object()
+                .bucket(BUCKET)
+                .key("notes.txt")
+                .send()
+                .await
+                .unwrap();
+        assert_eq!(deleted.version_id(), Some("null"));
+    }
+
     #[tokio::test]
     async fn should_stop_collecting_versions_once_suspended() {
         let h = versioned().await;

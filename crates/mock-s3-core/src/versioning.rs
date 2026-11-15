@@ -574,7 +574,7 @@ impl Engine {
         let status = self.versioning_status(bucket).await?;
 
         if !status.keeps_versions() {
-            let mut meta = self.store.put_object(bucket, key, body, options).await?;
+            let meta = self.store.put_object(bucket, key, body, options).await?;
 
             if status.is_configured() {
                 // The new null version supersedes a null delete marker, and only one of
@@ -582,13 +582,15 @@ impl Engine {
                 self.store
                     .delete_object(bucket, &marker_storage_key(NULL_VERSION_ID, key))
                     .await?;
-
-                // A suspended write *is* a version — the null one — so it is reported
-                // like any other. A delete into a suspended bucket reports `null` the
-                // same way, and the two have to agree: a client that reads a version id
-                // from one and not the other cannot tell what it is looking at.
-                meta.version_id = Some(NULL_VERSION_ID.to_string());
             }
+
+            // No version id, deliberately, and this one is worth not re-deriving: a
+            // suspended write stores the null version, so reporting `null` reads as the
+            // consistent choice — a suspended *delete* does report it. Real S3 does not.
+            // ceph/s3-tests asserts it outright, in both
+            // `test_versioning_bucket_atomic_upload_return_version_id` and
+            // `test_versioning_bucket_multipart_upload_return_version_id`:
+            // "for versioning-suspended-bucket, no version-id should return".
             return Ok(meta);
         }
 
@@ -969,14 +971,9 @@ mod tests {
                 .put_bucket_versioning("suspended", VersioningStatus::Suspended)
                 .await
                 .unwrap();
-            // A suspended write is still a version — the null one — and is reported as
-            // such, exactly as a suspended delete reports the null marker it inserts.
-            assert_eq!(
-                put(&engine, "suspended", "notes.txt", "two")
-                    .await
-                    .as_deref(),
-                Some(NULL_VERSION_ID)
-            );
+            // A suspended write stores the null version but reports no version id, which
+            // is what real S3 does even though a suspended delete *does* report `null`.
+            assert_eq!(put(&engine, "suspended", "notes.txt", "two").await, None);
             put(&engine, "suspended", "notes.txt", "three").await;
 
             let ids: Vec<String> = engine
