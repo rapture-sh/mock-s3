@@ -1,0 +1,46 @@
+name: Feature request
+description: A missing S3 operation, or something mock-s3 should be able to do
+labels: ["enhancement"]
+body:
+  - type: input
+    id: feature
+    attributes:
+      label: The operation or feature
+      placeholder: GetObjectTagging
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: What you are trying to test
+      description: >
+        The concrete situation you are in. "My upload path calls this and the
+        test fails" is a much better case than "S3 has it".
+    validations:
+      required: true
+
+  - type: textarea
+    id: behaviour
+    attributes:
+      label: Expected behaviour
+      description: >
+        What real S3 does, ideally with a link to the API reference. For error
+        cases, the status code and error code matter.
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: >
+            This is testable behaviour, not something that needs real IAM,
+            replication or multi-hour lifecycle transitions
+          required: true
+
+  - type: checkboxes
+    id: build-it
+    attributes:
+      label: Would you build it?
+      options:
+        - label: I'd like to implement this myself
