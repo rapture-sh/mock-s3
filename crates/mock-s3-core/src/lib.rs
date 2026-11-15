@@ -12,6 +12,7 @@ use bytes::Bytes;
 pub mod error;
 pub mod listing;
 pub mod model;
+pub mod multipart;
 pub mod store;
 
 pub use error::{Error, Result};
@@ -21,7 +22,9 @@ pub use store::{DiskStore, MemoryStore, Store};
 
 /// The engine every request goes through, whichever listener it arrived on.
 pub struct Engine {
-    store: Arc<dyn Store>,
+    /// Visible to the crate so the multipart module can build on the same primitives
+    /// rather than growing the `Store` trait.
+    pub(crate) store: Arc<dyn Store>,
     region: String,
 }
 
@@ -87,7 +90,15 @@ impl Engine {
     /// List one page of a bucket. The pagination itself is in [`listing::list`].
     pub async fn list_objects(&self, bucket: &str, request: &ListRequest) -> Result<ListResult> {
         let all = self.store.list_objects(bucket).await?;
-        Ok(listing::list(all, request))
+
+        // Parts of an in-flight multipart upload are stored as objects under a reserved
+        // prefix. A client must never see one in a listing.
+        let visible: Vec<ObjectMeta> = all
+            .into_iter()
+            .filter(|meta| !meta.key.starts_with(multipart::UPLOAD_PREFIX))
+            .collect();
+
+        Ok(listing::list(visible, request))
     }
 
     /// Drop every bucket. The admin API exposes this for use between test runs.

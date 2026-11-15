@@ -7,6 +7,7 @@
 use std::fmt::Write as _;
 
 use chrono::{DateTime, SecondsFormat, Utc};
+use mock_s3_core::multipart::{PartInfo, UploadInfo};
 use mock_s3_core::{BucketInfo, ListResult};
 
 const DECLARATION: &str = r#"<?xml version="1.0" encoding="UTF-8"?>"#;
@@ -234,6 +235,121 @@ pub fn location_constraint(region: &str) -> String {
         "{DECLARATION}<LocationConstraint xmlns=\"{NAMESPACE}\">{}</LocationConstraint>",
         escape(body)
     )
+}
+
+pub fn copy_object_result(etag: &str, last_modified: &DateTime<Utc>) -> String {
+    format!(
+        "{DECLARATION}<CopyObjectResult xmlns=\"{NAMESPACE}\">\
+         <LastModified>{}</LastModified><ETag>&quot;{}&quot;</ETag>\
+         </CopyObjectResult>",
+        xml_timestamp(last_modified),
+        escape(etag)
+    )
+}
+
+pub fn initiate_multipart_upload(bucket: &str, key: &str, upload_id: &str) -> String {
+    format!(
+        "{DECLARATION}<InitiateMultipartUploadResult xmlns=\"{NAMESPACE}\">\
+         <Bucket>{}</Bucket><Key>{}</Key><UploadId>{}</UploadId>\
+         </InitiateMultipartUploadResult>",
+        escape(bucket),
+        escape(key),
+        escape(upload_id)
+    )
+}
+
+pub fn complete_multipart_upload(bucket: &str, key: &str, etag: &str) -> String {
+    format!(
+        "{DECLARATION}<CompleteMultipartUploadResult xmlns=\"{NAMESPACE}\">\
+         <Location>/{}/{}</Location><Bucket>{}</Bucket><Key>{}</Key>\
+         <ETag>&quot;{}&quot;</ETag></CompleteMultipartUploadResult>",
+        escape(bucket),
+        escape(key),
+        escape(bucket),
+        escape(key),
+        escape(etag)
+    )
+}
+
+pub fn list_parts_result(bucket: &str, key: &str, upload_id: &str, parts: &[PartInfo]) -> String {
+    let mut out = String::new();
+    let _ = write!(out, "{DECLARATION}<ListPartsResult xmlns=\"{NAMESPACE}\">");
+    let _ = write!(out, "<Bucket>{}</Bucket>", escape(bucket));
+    let _ = write!(out, "<Key>{}</Key>", escape(key));
+    let _ = write!(out, "<UploadId>{}</UploadId>", escape(upload_id));
+    let _ = write!(out, "<PartNumberMarker>0</PartNumberMarker>");
+    let _ = write!(out, "<MaxParts>1000</MaxParts>");
+    out.push_str("<IsTruncated>false</IsTruncated>");
+    out.push_str("<StorageClass>STANDARD</StorageClass>");
+
+    for part in parts {
+        let _ = write!(
+            out,
+            "<Part><PartNumber>{}</PartNumber><LastModified>{}</LastModified>\
+             <ETag>&quot;{}&quot;</ETag><Size>{}</Size></Part>",
+            part.number,
+            xml_timestamp(&part.last_modified),
+            escape(&part.etag),
+            part.size
+        );
+    }
+
+    out.push_str("</ListPartsResult>");
+    out
+}
+
+pub fn list_multipart_uploads_result(bucket: &str, uploads: &[UploadInfo]) -> String {
+    let mut out = String::new();
+    let _ = write!(
+        out,
+        "{DECLARATION}<ListMultipartUploadsResult xmlns=\"{NAMESPACE}\">"
+    );
+    let _ = write!(out, "<Bucket>{}</Bucket>", escape(bucket));
+    out.push_str("<KeyMarker></KeyMarker><UploadIdMarker></UploadIdMarker>");
+    out.push_str("<MaxUploads>1000</MaxUploads><IsTruncated>false</IsTruncated>");
+
+    for upload in uploads {
+        let _ = write!(
+            out,
+            "<Upload><Key>{}</Key><UploadId>{}</UploadId><Initiated>{}</Initiated>\
+             <StorageClass>STANDARD</StorageClass></Upload>",
+            escape(&upload.key),
+            escape(&upload.upload_id),
+            xml_timestamp(&upload.initiated)
+        );
+    }
+
+    out.push_str("</ListMultipartUploadsResult>");
+    out
+}
+
+/// A `DeleteObjects` response. In quiet mode only failures are reported, which is what
+/// `aws s3 rm --recursive` asks for.
+pub fn delete_result(
+    deleted: &[String],
+    errors: &[(String, &'static str, String)],
+    quiet: bool,
+) -> String {
+    let mut out = String::new();
+    let _ = write!(out, "{DECLARATION}<DeleteResult xmlns=\"{NAMESPACE}\">");
+
+    if !quiet {
+        for key in deleted {
+            let _ = write!(out, "<Deleted><Key>{}</Key></Deleted>", escape(key));
+        }
+    }
+    for (key, code, message) in errors {
+        let _ = write!(
+            out,
+            "<Error><Key>{}</Key><Code>{}</Code><Message>{}</Message></Error>",
+            escape(key),
+            escape(code),
+            escape(message)
+        );
+    }
+
+    out.push_str("</DeleteResult>");
+    out
 }
 
 pub fn versioning_configuration() -> String {

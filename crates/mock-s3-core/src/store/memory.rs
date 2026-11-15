@@ -85,7 +85,9 @@ impl Store for MemoryStore {
         let meta = ObjectMeta {
             key: key.to_string(),
             size: body.len() as u64,
-            etag: compute_etag(&body),
+            // A multipart object's etag is a digest of its parts, not of the
+            // assembled bytes, so the caller can supply it.
+            etag: options.etag.unwrap_or_else(|| compute_etag(&body)),
             last_modified: Utc::now(),
             content_type: options.content_type,
             user_metadata: options.user_metadata,

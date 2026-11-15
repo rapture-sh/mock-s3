@@ -74,7 +74,11 @@ pub async fn get(
         ));
     }
     if query.has("uploads") {
-        return Err(S3Error::not_implemented("ListMultipartUploads"));
+        let uploads = engine.list_uploads(&bucket).await?;
+        return Ok(response::xml(
+            StatusCode::OK,
+            xml::list_multipart_uploads_result(&bucket, &uploads),
+        ));
     }
 
     let v2 = query.get("list-type") == Some("2");
@@ -126,11 +130,38 @@ pub async fn get(
 }
 
 /// `POST /{bucket}` — DeleteObjects and the other bucket-level posts.
-pub async fn post(RawQuery(raw): RawQuery) -> Result<Response, S3Error> {
+pub async fn post(
+    State(engine): State<Arc<Engine>>,
+    Path(bucket): Path<String>,
+    RawQuery(raw): RawQuery,
+    body: bytes::Bytes,
+) -> Result<Response, S3Error> {
     let query = Query::parse(raw.as_deref());
 
-    if query.has("delete") {
-        return Err(S3Error::not_implemented("DeleteObjects"));
+    if !query.has("delete") {
+        return Err(S3Error::not_implemented("this bucket operation"));
     }
-    Err(S3Error::not_implemented("this bucket operation"))
+
+    // A missing bucket fails the whole request rather than every key in it.
+    engine.head_bucket(&bucket).await?;
+
+    let request = crate::parse::delete_objects(&body)?;
+
+    // S3 reports per-key outcomes with a 200, so one bad key does not fail the batch.
+    let mut deleted: Vec<String> = Vec::new();
+    let mut errors: Vec<(String, &'static str, String)> = Vec::new();
+    for key in request.keys {
+        match engine.delete_object(&bucket, &key).await {
+            Ok(()) => deleted.push(key),
+            Err(error) => {
+                let mapped = S3Error::from(error);
+                errors.push((key, mapped.code, mapped.message));
+            }
+        }
+    }
+
+    Ok(response::xml(
+        StatusCode::OK,
+        xml::delete_result(&deleted, &errors, request.quiet),
+    ))
 }

@@ -7,6 +7,7 @@
 pub mod chunked;
 pub mod error;
 pub mod ops;
+pub mod parse;
 pub mod query;
 pub mod request_id;
 pub mod response;

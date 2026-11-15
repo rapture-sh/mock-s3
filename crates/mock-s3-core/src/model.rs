@@ -39,11 +39,20 @@ pub struct ObjectMeta {
 }
 
 /// Everything a put carries besides the payload itself.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PutOptions {
     pub content_type: String,
+    #[serde(default)]
     pub user_metadata: BTreeMap<String, String>,
+    #[serde(default)]
     pub system_headers: BTreeMap<String, String>,
+    /// An ETag to store instead of the payload's MD5.
+    ///
+    /// A multipart object's ETag is a digest of its parts' digests with a `-N` suffix,
+    /// not the MD5 of the assembled bytes, and clients compare it. Nothing else should
+    /// set this.
+    #[serde(default)]
+    pub etag: Option<String>,
 }
 
 impl Default for PutOptions {
@@ -52,6 +61,7 @@ impl Default for PutOptions {
             content_type: DEFAULT_CONTENT_TYPE.to_string(),
             user_metadata: BTreeMap::new(),
             system_headers: BTreeMap::new(),
+            etag: None,
         }
     }
 }
@@ -79,6 +89,27 @@ pub fn compute_etag(body: &[u8]) -> String {
     let mut hasher = Md5::new();
     hasher.update(body);
     hex::encode(hasher.finalize())
+}
+
+/// The ETag S3 reports for a multipart object: an MD5 over the parts' raw MD5s, then a
+/// hyphen and the part count.
+///
+/// This is not the MD5 of the assembled object, and clients compare it, so getting it
+/// wrong is visible. `part_etags` are the hex digests in part order.
+pub fn multipart_etag(part_etags: &[String]) -> String {
+    use md5::{Digest, Md5};
+
+    let mut hasher = Md5::new();
+    for etag in part_etags {
+        match hex::decode(etag) {
+            Ok(raw) => hasher.update(raw),
+            // A part etag we did not write ourselves; hashing its text is closer to
+            // right than skipping it, and it keeps the digest deterministic.
+            Err(_) => hasher.update(etag.as_bytes()),
+        }
+    }
+
+    format!("{}-{}", hex::encode(hasher.finalize()), part_etags.len())
 }
 
 /// Validate a bucket name against the real S3 rules, so a name that fails against AWS

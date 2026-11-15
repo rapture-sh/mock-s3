@@ -102,6 +102,36 @@ impl From<CoreError> for S3Error {
                  both hold data and act as a directory for other keys."
             )),
 
+            CoreError::NoSuchUpload(upload_id) => S3Error::new(
+                StatusCode::NOT_FOUND,
+                "NoSuchUpload",
+                "The specified upload does not exist. The upload ID may be invalid, or the \
+                 upload may have been aborted or completed.",
+            )
+            .with_resource(upload_id),
+
+            CoreError::InvalidPart(detail) => S3Error::new(
+                StatusCode::BAD_REQUEST,
+                "InvalidPart",
+                "One or more of the specified parts could not be found, or the entity tag \
+                 did not match.",
+            )
+            .with_resource(detail),
+
+            CoreError::InvalidPartOrder => S3Error::new(
+                StatusCode::BAD_REQUEST,
+                "InvalidPartOrder",
+                "The list of parts was not in ascending order. Parts must be ordered by \
+                 part number.",
+            ),
+
+            CoreError::EntityTooSmall { number, size } => S3Error::new(
+                StatusCode::BAD_REQUEST,
+                "EntityTooSmall",
+                "Your proposed upload is smaller than the minimum allowed object size.",
+            )
+            .with_resource(format!("part {number} is {size} bytes")),
+
             CoreError::Io(error) => {
                 tracing::error!(%error, "storage failure");
                 S3Error::new(

@@ -33,6 +33,18 @@ pub enum Error {
     #[error("object key conflicts with an existing path: {0}")]
     KeyPathConflict(String),
 
+    #[error("no such multipart upload: {0}")]
+    NoSuchUpload(String),
+
+    #[error("invalid part: {0}")]
+    InvalidPart(String),
+
+    #[error("parts were not listed in ascending order")]
+    InvalidPartOrder,
+
+    #[error("part {number} is {size} bytes, below the minimum for a non-final part")]
+    EntityTooSmall { number: u32, size: u64 },
+
     #[error("storage failure: {0}")]
     Io(#[from] std::io::Error),
 }

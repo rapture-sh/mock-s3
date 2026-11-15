@@ -24,11 +24,27 @@ pub async fn put(
 
     // Both of these are a PUT to the same path, so they have to be turned away here
     // rather than silently stored as an object.
-    if query.has("uploadId") || query.has("partNumber") {
-        return Err(S3Error::not_implemented("UploadPart"));
+    // UploadPart: same method and path as PutObject, told apart by the query.
+    if let (Some(upload_id), Some(raw_number)) =
+        (query.non_empty("uploadId"), query.non_empty("partNumber"))
+    {
+        let number: u32 = raw_number.parse().map_err(|_| {
+            S3Error::invalid_argument(format!("partNumber is not a number: {raw_number}"))
+        })?;
+        let body = crate::chunked::decode(body, &headers)?;
+
+        let part = engine.upload_part(&bucket, upload_id, number, body).await?;
+
+        let mut out = HeaderMap::new();
+        response::set(&mut out, header::ETAG, &quoted(&part.etag));
+        return Ok(response::empty(StatusCode::OK, out));
     }
-    if headers.contains_key(COPY_SOURCE) {
-        return Err(S3Error::not_implemented("CopyObject"));
+    // CopyObject: a PUT that names a source instead of carrying a body.
+    if let Some(source) = headers
+        .get(COPY_SOURCE)
+        .and_then(|value| value.to_str().ok())
+    {
+        return copy_object(&engine, &bucket, &key, source, &headers).await;
     }
 
     // A streaming-signed upload arrives wrapped in chunk framing. Without this the frame
@@ -39,6 +55,7 @@ pub async fn put(
         content_type: ops::content_type(&headers),
         user_metadata: ops::user_metadata(&headers),
         system_headers: ops::system_headers(&headers),
+        etag: None,
     };
 
     let meta = engine.put_object(&bucket, &key, body, options).await?;
@@ -56,8 +73,15 @@ pub async fn get(
     headers: HeaderMap,
 ) -> Result<Response, S3Error> {
     let query = Query::parse(raw.as_deref());
-    if query.has("uploadId") {
-        return Err(S3Error::not_implemented("ListParts"));
+
+    if let Some(upload_id) = query.non_empty("uploadId") {
+        let upload_key = engine.upload_key(&bucket, upload_id).await?;
+        let parts = engine.list_parts(&bucket, upload_id).await?;
+
+        return Ok(response::xml(
+            StatusCode::OK,
+            xml::list_parts_result(&bucket, &upload_key, upload_id, &parts),
+        ));
     }
 
     let object = engine.get_object(&bucket, &key).await?;
@@ -119,8 +143,9 @@ pub async fn delete(
     RawQuery(raw): RawQuery,
 ) -> Result<Response, S3Error> {
     let query = Query::parse(raw.as_deref());
-    if query.has("uploadId") {
-        return Err(S3Error::not_implemented("AbortMultipartUpload"));
+    if let Some(upload_id) = query.non_empty("uploadId") {
+        engine.abort_upload(&bucket, upload_id).await?;
+        return Ok(response::empty(StatusCode::NO_CONTENT, HeaderMap::new()));
     }
 
     engine.delete_object(&bucket, &key).await?;
@@ -128,16 +153,99 @@ pub async fn delete(
 }
 
 /// `POST /{bucket}/{key}` — the multipart lifecycle.
-pub async fn post(RawQuery(raw): RawQuery) -> Result<Response, S3Error> {
+pub async fn post(
+    State(engine): State<Arc<Engine>>,
+    Path((bucket, key)): Path<(String, String)>,
+    RawQuery(raw): RawQuery,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response, S3Error> {
     let query = Query::parse(raw.as_deref());
 
     if query.has("uploads") {
-        return Err(S3Error::not_implemented("CreateMultipartUpload"));
+        let options = mock_s3_core::PutOptions {
+            content_type: ops::content_type(&headers),
+            user_metadata: ops::user_metadata(&headers),
+            system_headers: ops::system_headers(&headers),
+            etag: None,
+        };
+        let upload_id = engine.create_upload(&bucket, &key, options).await?;
+
+        return Ok(response::xml(
+            StatusCode::OK,
+            xml::initiate_multipart_upload(&bucket, &key, &upload_id),
+        ));
     }
-    if query.has("uploadId") {
-        return Err(S3Error::not_implemented("CompleteMultipartUpload"));
+
+    if let Some(upload_id) = query.non_empty("uploadId") {
+        let listed: Vec<(u32, String)> = crate::parse::complete_multipart_upload(&body)?
+            .into_iter()
+            .map(|part| (part.number, part.etag))
+            .collect();
+
+        let meta = engine.complete_upload(&bucket, upload_id, &listed).await?;
+
+        return Ok(response::xml(
+            StatusCode::OK,
+            xml::complete_multipart_upload(&bucket, &meta.key, &meta.etag),
+        ));
     }
+
     Err(S3Error::not_implemented("this object operation"))
+}
+
+/// Copy one object onto another key.
+///
+/// `x-amz-copy-source` is `/bucket/key` or `bucket/key`, percent-encoded. By default the
+/// copy keeps the source's content type and metadata; `x-amz-metadata-directive:
+/// REPLACE` takes them from this request instead.
+async fn copy_object(
+    engine: &Engine,
+    bucket: &str,
+    key: &str,
+    source: &str,
+    headers: &HeaderMap,
+) -> Result<Response, S3Error> {
+    let decoded = percent_encoding::percent_decode_str(source).decode_utf8_lossy();
+    let (source_bucket, source_key) =
+        decoded
+            .trim_start_matches('/')
+            .split_once('/')
+            .ok_or_else(|| {
+                S3Error::invalid_argument(format!(
+                    "x-amz-copy-source must be /bucket/key, got {source}"
+                ))
+            })?;
+
+    let object = engine.get_object(source_bucket, source_key).await?;
+
+    let replacing = headers
+        .get("x-amz-metadata-directive")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.eq_ignore_ascii_case("REPLACE"));
+
+    let options = if replacing {
+        mock_s3_core::PutOptions {
+            content_type: ops::content_type(headers),
+            user_metadata: ops::user_metadata(headers),
+            system_headers: ops::system_headers(headers),
+            etag: None,
+        }
+    } else {
+        mock_s3_core::PutOptions {
+            content_type: object.meta.content_type.clone(),
+            user_metadata: object.meta.user_metadata.clone(),
+            system_headers: object.meta.system_headers.clone(),
+            etag: None,
+        }
+    };
+
+    let meta = engine.put_object(bucket, key, object.body, options).await?;
+
+    Ok(response::xml(
+        StatusCode::OK,
+        xml::copy_object_result(&meta.etag, &meta.last_modified),
+    ))
 }
 
 /// An ETag goes on the wire quoted, and SDKs compare it including the quotes.

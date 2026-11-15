@@ -16,4 +16,5 @@ chrono = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
 percent-encoding = { workspace = true }
+quick-xml = { workspace = true }
 tracing = { workspace = true }

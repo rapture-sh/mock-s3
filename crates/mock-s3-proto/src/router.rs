@@ -45,6 +45,13 @@ pub fn router(engine: Arc<Engine>, config: ProtoConfig) -> Router {
                 .post(ops::object::post),
         )
         .fallback(unmatched)
+        // The framework caps request bodies at 2 MB by default, which answers any
+        // ordinary upload with a 413. S3 accepts 5 GB in a single PUT, so the cap has to
+        // go: an object storage server that cannot take a 3 MB file is not one.
+        //
+        // That does mean a large upload is held in memory. For a mock bound to localhost
+        // that is the intended trade — see SECURITY.md.
+        .layer(axum::extract::DefaultBodyLimit::disable())
         .with_state(engine);
 
     // The rewrite below has to happen *before* the route table is consulted, and a layer
