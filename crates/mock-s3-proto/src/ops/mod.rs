@@ -7,6 +7,79 @@ pub mod bucket;
 pub mod object;
 pub mod service;
 
+/// Answer a CORS preflight for a bucket.
+///
+/// A browser sends this before the real request and refuses to continue unless the
+/// response allows the origin, method and headers it names. With no CORS configuration
+/// stored, S3 refuses — and so does this, because a mock that always allows would let a
+/// web app pass here and fail against AWS.
+pub(crate) async fn preflight(
+    engine: &mock_s3_core::Engine,
+    bucket: &str,
+    headers: &HeaderMap,
+) -> Result<axum::response::Response, crate::S3Error> {
+    use crate::{cors, response};
+
+    let text = |name: &str| {
+        headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+    };
+
+    let Some(origin) = text("origin") else {
+        return Err(crate::S3Error::invalid_argument(
+            "a CORS preflight must carry an Origin header",
+        ));
+    };
+    let method = text("access-control-request-method").unwrap_or("GET");
+    let requested = text("access-control-request-headers").unwrap_or_default();
+
+    engine.head_bucket(bucket).await?;
+
+    let Some(stored) = engine
+        .get_bucket_config(bucket, mock_s3_core::bucket_config::CORS)
+        .await?
+    else {
+        return Err(cors::forbidden());
+    };
+
+    let rules = cors::parse(&stored)?;
+    let Some(allowed) = cors::evaluate(&rules, origin, method, requested) else {
+        return Err(cors::forbidden());
+    };
+
+    let mut out = HeaderMap::new();
+    for (name, value) in cors_response_headers(&allowed) {
+        if let Ok(name) = http::HeaderName::try_from(name) {
+            crate::response::set(&mut out, name, &value);
+        }
+    }
+    Ok(response::empty(http::StatusCode::OK, out))
+}
+
+/// The `Access-Control-*` headers an allowance turns into.
+pub(crate) fn cors_response_headers(
+    allowed: &crate::cors::Allowance,
+) -> Vec<(&'static str, String)> {
+    let mut headers = vec![
+        ("access-control-allow-origin", allowed.origin.clone()),
+        ("access-control-allow-methods", allowed.methods.clone()),
+        // Caches must not serve one origin's response to another.
+        ("vary", "Origin".to_string()),
+    ];
+    if let Some(value) = &allowed.headers {
+        headers.push(("access-control-allow-headers", value.clone()));
+    }
+    if let Some(value) = &allowed.expose_headers {
+        headers.push(("access-control-expose-headers", value.clone()));
+    }
+    if let Some(seconds) = allowed.max_age_seconds {
+        headers.push(("access-control-max-age", seconds.to_string()));
+    }
+    headers
+}
+
 const USER_METADATA_PREFIX: &str = "x-amz-meta-";
 
 /// Pull `x-amz-meta-*` headers out of a request.

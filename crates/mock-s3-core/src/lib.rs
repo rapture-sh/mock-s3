@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 
+pub mod bucket_config;
 pub mod error;
 pub mod listing;
 pub mod model;
@@ -19,6 +20,10 @@ pub use error::{Error, Result};
 pub use listing::{ListRequest, ListResult};
 pub use model::{BucketInfo, ObjectData, ObjectMeta, PutOptions};
 pub use store::{DiskStore, MemoryStore, Store};
+
+/// Keys under this prefix are mock-s3's own bookkeeping — in-flight multipart parts and
+/// bucket configuration — and never appear in a listing.
+pub const HIDDEN_PREFIX: &str = ".mock-s3/";
 
 /// The engine every request goes through, whichever listener it arrived on.
 pub struct Engine {
@@ -91,11 +96,11 @@ impl Engine {
     pub async fn list_objects(&self, bucket: &str, request: &ListRequest) -> Result<ListResult> {
         let all = self.store.list_objects(bucket).await?;
 
-        // Parts of an in-flight multipart upload are stored as objects under a reserved
+        // Multipart parts and bucket configuration are stored as objects under a hidden
         // prefix. A client must never see one in a listing.
         let visible: Vec<ObjectMeta> = all
             .into_iter()
-            .filter(|meta| !meta.key.starts_with(multipart::UPLOAD_PREFIX))
+            .filter(|meta| !bucket_config::is_hidden(&meta.key))
             .collect();
 
         Ok(listing::list(visible, request))

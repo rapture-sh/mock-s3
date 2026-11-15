@@ -41,7 +41,7 @@ fn malformed(detail: impl std::fmt::Display) -> S3Error {
 ///
 /// Both bodies here are flat enough that knowing the innermost open element and when it
 /// closes is all the structure needed.
-fn walk(body: &[u8], mut visit: impl FnMut(&str, Option<&str>)) -> Result<(), S3Error> {
+pub(crate) fn walk(body: &[u8], mut visit: impl FnMut(&str, Option<&str>)) -> Result<(), S3Error> {
     let text = std::str::from_utf8(body).map_err(|_| malformed("the body was not UTF-8"))?;
 
     let mut reader = Reader::from_str(text);

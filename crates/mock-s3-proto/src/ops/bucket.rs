@@ -18,8 +18,20 @@ pub async fn create(
     State(engine): State<Arc<Engine>>,
     Path(bucket): Path<String>,
     RawQuery(raw): RawQuery,
+    body: bytes::Bytes,
 ) -> Result<Response, S3Error> {
     let query = Query::parse(raw.as_deref());
+
+    // Stored rather than ignored: preflight has to evaluate these.
+    if query.has("cors") {
+        // Parsed before storing, so a malformed document fails here rather than on the
+        // first browser request.
+        crate::cors::parse(&body)?;
+        engine
+            .put_bucket_config(&bucket, mock_s3_core::bucket_config::CORS, body)
+            .await?;
+        return Ok(response::empty(StatusCode::OK, HeaderMap::new()));
+    }
 
     // `PUT /{bucket}?versioning` configures a bucket; it must not create one.
     if let Some(name) = configurable(&query) {
@@ -43,6 +55,13 @@ pub async fn delete(
 ) -> Result<Response, S3Error> {
     let query = Query::parse(raw.as_deref());
 
+    if query.has("cors") {
+        engine
+            .delete_bucket_config(&bucket, mock_s3_core::bucket_config::CORS)
+            .await?;
+        return Ok(response::empty(StatusCode::NO_CONTENT, HeaderMap::new()));
+    }
+
     // As with PUT: `DELETE /{bucket}?cors` clears a setting, it does not delete the
     // bucket. Getting this wrong would destroy data on a request meant to be harmless.
     if let Some(name) = configurable(&query) {
@@ -56,6 +75,15 @@ pub async fn delete(
     Ok(response::empty(StatusCode::NO_CONTENT, HeaderMap::new()))
 }
 
+/// `OPTIONS /{bucket}` — a CORS preflight.
+pub async fn options(
+    State(engine): State<Arc<Engine>>,
+    Path(bucket): Path<String>,
+    headers: HeaderMap,
+) -> Result<Response, S3Error> {
+    crate::ops::preflight(&engine, &bucket, &headers).await
+}
+
 /// Bucket settings mock-s3 accepts and ignores.
 ///
 /// It stores none of them, because nothing here acts on a lifecycle rule or a bucket
@@ -64,7 +92,6 @@ pub async fn delete(
 const CONFIGURABLE: &[&str] = &[
     "accelerate",
     "acl",
-    "cors",
     "encryption",
     "lifecycle",
     "logging",
@@ -97,11 +124,6 @@ async fn subresource(
 ) -> Result<Option<Response>, S3Error> {
     /// Codes S3 uses for a setting that was never configured. Each pairs with 404.
     const NOT_CONFIGURED: &[(&str, &str, &str)] = &[
-        (
-            "cors",
-            "NoSuchCORSConfiguration",
-            "The CORS configuration does not exist.",
-        ),
         (
             "lifecycle",
             "NoSuchLifecycleConfiguration",
@@ -147,6 +169,29 @@ async fn subresource(
         ("ownershipControls", "OwnershipControls"),
         ("publicAccessBlock", "PublicAccessBlockConfiguration"),
     ];
+
+    // CORS is stored for real, because preflight has to evaluate it.
+    if query.has("cors") {
+        engine.head_bucket(bucket).await?;
+
+        return match engine
+            .get_bucket_config(bucket, mock_s3_core::bucket_config::CORS)
+            .await?
+        {
+            Some(stored) => {
+                let rules = crate::cors::parse(&stored)?;
+                Ok(Some(response::xml(
+                    StatusCode::OK,
+                    xml::cors_configuration(&rules),
+                )))
+            }
+            None => Err(S3Error::new(
+                StatusCode::NOT_FOUND,
+                "NoSuchCORSConfiguration",
+                "The CORS configuration does not exist.",
+            )),
+        };
+    }
 
     let known = query.has("location")
         || query.has("versioning")

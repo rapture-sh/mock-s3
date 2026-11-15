@@ -291,6 +291,16 @@ async fn copy_object(
     ))
 }
 
+/// `OPTIONS /{bucket}/{key}` — a CORS preflight. The key plays no part: CORS is
+/// configured per bucket.
+pub async fn options(
+    State(engine): State<Arc<Engine>>,
+    Path((bucket, _key)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Response, S3Error> {
+    crate::ops::preflight(&engine, &bucket, &headers).await
+}
+
 /// What the conditional headers on a read say to do.
 #[derive(Debug, PartialEq, Eq)]
 enum Precondition {

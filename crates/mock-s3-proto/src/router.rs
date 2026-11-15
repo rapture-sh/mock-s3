@@ -38,6 +38,10 @@ impl Default for ProtoConfig {
 }
 
 pub fn router(engine: Arc<Engine>, config: ProtoConfig) -> Router {
+    // Kept back before `with_state` takes ownership, so the CORS layer can read a
+    // bucket's configuration.
+    let engine_for_cors = engine.clone();
+
     let routes = Router::new()
         .route("/", get(ops::service::list_buckets))
         .route(
@@ -46,7 +50,8 @@ pub fn router(engine: Arc<Engine>, config: ProtoConfig) -> Router {
                 .get(ops::bucket::get)
                 .head(ops::bucket::head)
                 .delete(ops::bucket::delete)
-                .post(ops::bucket::post),
+                .post(ops::bucket::post)
+                .options(ops::bucket::options),
         )
         .route(
             "/:bucket/*key",
@@ -54,7 +59,8 @@ pub fn router(engine: Arc<Engine>, config: ProtoConfig) -> Router {
                 .get(ops::object::get)
                 .head(ops::object::head)
                 .delete(ops::object::delete)
-                .post(ops::object::post),
+                .post(ops::object::post)
+                .options(ops::object::options),
         )
         .fallback(unmatched)
         // The framework caps request bodies at 2 MB by default, which answers any
@@ -71,10 +77,15 @@ pub fn router(engine: Arc<Engine>, config: ProtoConfig) -> Router {
     // of an empty one puts the layer outside the matching it needs to precede.
     let vhost = config.clone();
     let log = config.request_log.clone();
+    let cors_engine = engine_for_cors;
 
     Router::new()
         .fallback_service(routes)
         .layer(axum::middleware::from_fn(attach_request_id))
+        .layer(axum::middleware::from_fn(move |request, next| {
+            let engine = cors_engine.clone();
+            async move { add_cors_headers(request, next, engine).await }
+        }))
         .layer(axum::middleware::from_fn(normalize_bucket_path))
         .layer(axum::middleware::from_fn(move |request, next| {
             let config = vhost.clone();
@@ -86,6 +97,63 @@ pub fn router(engine: Arc<Engine>, config: ProtoConfig) -> Router {
             let log = log.clone();
             async move { observe(request, next, log).await }
         }))
+}
+
+/// Put `Access-Control-*` headers on an ordinary response when CORS allows the origin.
+///
+/// Preflight alone is not enough: a browser reads the headers on the real response too,
+/// and without them the fetch fails after a successful preflight. Errors get them as
+/// well, or the page cannot read why it failed.
+async fn add_cors_headers(request: Request, next: Next, engine: Arc<Engine>) -> Response {
+    // Only a browser sends Origin, so a non-browser request pays for one header lookup.
+    let origin = request
+        .headers()
+        .get(http::header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string);
+    let method = request.method().to_string();
+    let path = request.uri().path().to_string();
+
+    let mut response = next.run(request).await;
+
+    let Some(origin) = origin else {
+        return response;
+    };
+    // A preflight answered for itself; do not overwrite what it decided.
+    if response
+        .headers()
+        .contains_key("access-control-allow-origin")
+    {
+        return response;
+    }
+    let (Some(bucket), _) = crate::request_log::split_path(&path) else {
+        return response;
+    };
+
+    let stored = match engine
+        .get_bucket_config(&bucket, mock_s3_core::bucket_config::CORS)
+        .await
+    {
+        Ok(Some(stored)) => stored,
+        // No configuration, or the bucket is gone: nothing to allow, and the response
+        // stands on its own.
+        _ => return response,
+    };
+    let Ok(rules) = crate::cors::parse(&stored) else {
+        return response;
+    };
+    let Some(allowed) = crate::cors::evaluate(&rules, &origin, &method, "") else {
+        return response;
+    };
+
+    let headers = response.headers_mut();
+    for (name, value) in crate::ops::cors_response_headers(&allowed) {
+        if let Ok(name) = http::HeaderName::try_from(name) {
+            crate::response::set(headers, name, &value);
+        }
+    }
+
+    response
 }
 
 /// Log a request and record it for the admin API.

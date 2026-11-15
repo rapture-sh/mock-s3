@@ -373,6 +373,37 @@ pub fn access_control_policy() -> String {
     )
 }
 
+pub fn cors_configuration(rules: &[crate::cors::CorsRule]) -> String {
+    let mut out = String::new();
+    let _ = write!(
+        out,
+        "{DECLARATION}<CORSConfiguration xmlns=\"{NAMESPACE}\">"
+    );
+
+    for rule in rules {
+        out.push_str("<CORSRule>");
+        for origin in &rule.allowed_origins {
+            let _ = write!(out, "<AllowedOrigin>{}</AllowedOrigin>", escape(origin));
+        }
+        for method in &rule.allowed_methods {
+            let _ = write!(out, "<AllowedMethod>{}</AllowedMethod>", escape(method));
+        }
+        for header in &rule.allowed_headers {
+            let _ = write!(out, "<AllowedHeader>{}</AllowedHeader>", escape(header));
+        }
+        for header in &rule.expose_headers {
+            let _ = write!(out, "<ExposeHeader>{}</ExposeHeader>", escape(header));
+        }
+        if let Some(seconds) = rule.max_age_seconds {
+            let _ = write!(out, "<MaxAgeSeconds>{seconds}</MaxAgeSeconds>");
+        }
+        out.push_str("</CORSRule>");
+    }
+
+    out.push_str("</CORSConfiguration>");
+    out
+}
+
 /// An empty tag set. The `TagSet` element has to be there even when it holds nothing,
 /// or an SDK reports a malformed response rather than "no tags".
 pub fn object_tagging() -> String {

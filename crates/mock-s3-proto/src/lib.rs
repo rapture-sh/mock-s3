@@ -5,6 +5,7 @@
 //! headers and XML shapes that real S3 uses. No storage logic lives here.
 
 pub mod chunked;
+pub mod cors;
 pub mod error;
 pub mod ops;
 pub mod parse;
