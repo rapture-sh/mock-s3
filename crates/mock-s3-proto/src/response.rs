@@ -24,19 +24,21 @@ pub fn set(headers: &mut HeaderMap, name: HeaderName, value: &str) {
 
 /// Put one user metadata entry back on the wire as `x-amz-meta-<name>`.
 ///
-/// The value goes back as the bytes it arrived as, not as UTF-8: it was decoded from
-/// Latin-1 on the way in, so each `char` is one byte again here. Without that, a value
-/// holding a byte above `0x7F` is dropped on the way out even though it was stored.
+/// Latin-1, which is what S3 answers with and what an HTTP client decodes a header value
+/// as. Sending the value's UTF-8 bytes instead would hand back `C3 A9` where the client
+/// expects `E9`, and it would read as `Ã©`. A character Latin-1 cannot hold at all goes
+/// out as UTF-8, because the alternative is losing it.
 pub fn set_user_metadata(headers: &mut HeaderMap, key: &str, value: &str) {
     let Ok(name) = HeaderName::try_from(format!("x-amz-meta-{key}")) else {
         tracing::debug!(key, "dropping user metadata with an unrepresentable name");
         return;
     };
 
-    let bytes: Vec<u8> = value
-        .chars()
-        .map(|character| u8::try_from(character as u32).unwrap_or(b'?'))
-        .collect();
+    let bytes: Vec<u8> = if value.chars().all(|character| (character as u32) <= 0xFF) {
+        value.chars().map(|character| character as u8).collect()
+    } else {
+        value.as_bytes().to_vec()
+    };
 
     match HeaderValue::from_bytes(&bytes) {
         Ok(value) => {

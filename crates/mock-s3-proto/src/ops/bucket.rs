@@ -354,6 +354,7 @@ pub async fn get(
         start_after: request.start_after.as_deref(),
         encoding_type: query.non_empty("encoding-type"),
         v2,
+        fetch_owner: query.get("fetch-owner") == Some("true"),
     };
     Ok(response::xml(
         StatusCode::OK,

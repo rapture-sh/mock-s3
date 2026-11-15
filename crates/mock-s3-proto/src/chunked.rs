@@ -46,7 +46,14 @@ pub fn is_chunked(headers: &HeaderMap) -> bool {
                 .any(|part| part.trim().eq_ignore_ascii_case("aws-chunked"))
         });
 
-    streaming_sha || chunked_encoding
+    // `Content-Encoding: aws-chunked` on its own does not mean the body is framed. A
+    // client may declare it as an ordinary encoding — S3 accepts that and stores the
+    // object — and treating it as framing then fails the upload with
+    // `MissingContentLength` for a request that was never chunked. The decoded length is
+    // what an actually-framed request always carries, so it is the thing to key on.
+    let decoded_length = headers.contains_key(DECODED_LENGTH);
+
+    streaming_sha || (chunked_encoding && decoded_length)
 }
 
 /// Unwrap a request body, returning the object's real bytes.
@@ -192,6 +199,7 @@ mod tests {
                 http::header::CONTENT_ENCODING,
                 "aws-chunked".parse().unwrap(),
             );
+            headers.insert(DECODED_LENGTH, "5".parse().unwrap());
 
             assert!(is_chunked(&headers));
         }
@@ -202,6 +210,35 @@ mod tests {
             headers.insert(
                 http::header::CONTENT_ENCODING,
                 "gzip, aws-chunked".parse().unwrap(),
+            );
+            headers.insert(DECODED_LENGTH, "5".parse().unwrap());
+
+            assert!(is_chunked(&headers));
+        }
+
+        /// A client may declare `aws-chunked` as an ordinary content encoding without
+        /// framing the body, and S3 accepts that and stores the object. Reading the
+        /// header alone as framing failed the upload with `MissingContentLength` for a
+        /// request that was never chunked.
+        #[test]
+        fn should_not_detect_a_declared_encoding_with_no_decoded_length() {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                http::header::CONTENT_ENCODING,
+                "aws-chunked".parse().unwrap(),
+            );
+
+            assert!(!is_chunked(&headers));
+        }
+
+        /// A streaming signature is framing whether or not the encoding says so, and it
+        /// always carries the decoded length, so that path is unaffected.
+        #[test]
+        fn should_still_detect_a_streaming_signature() {
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                CONTENT_SHA256,
+                "STREAMING-AWS4-HMAC-SHA256-PAYLOAD".parse().unwrap(),
             );
 
             assert!(is_chunked(&headers));

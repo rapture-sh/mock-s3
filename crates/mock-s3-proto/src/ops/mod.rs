@@ -94,20 +94,27 @@ pub(crate) fn user_metadata(headers: &HeaderMap) -> BTreeMap<String, String> {
             if name.is_empty() {
                 return None;
             }
-            Some((name.to_string(), latin1_to_string(value.as_bytes())))
+            Some((name.to_string(), metadata_text(value.as_bytes())))
         })
         .collect()
 }
 
-/// Decode a header value the way HTTP defines it: as bytes, one per character.
+/// Read a user metadata value as text.
 ///
-/// A user metadata value may legally contain a byte above `0x7F` — `x-amz-meta-x: café`
-/// is a real thing clients send — and S3 hands back exactly what it was given. Treating
-/// the value as UTF-8 and dropping it when that fails loses the metadata silently.
-/// Latin-1 maps every byte to one `char`, so [`crate::response::set_user_metadata`] can
-/// turn it back into the same bytes.
-fn latin1_to_string(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| *byte as char).collect()
+/// A value may legally hold a byte above `0x7F` — `x-amz-meta-x: café` is a real thing
+/// clients send — and the old code ran it through `to_str`, which rejects those bytes, so
+/// the metadata was dropped without a word.
+///
+/// Clients send such a value as UTF-8, and S3 answers with it as Latin-1, so metadata is
+/// text rather than bytes: `é` arrives as `C3 A9` and comes back as `E9`. ceph/s3-tests
+/// pins that in `test_object_set_get_unicode_metadata`, which fails against a server that
+/// echoes the bytes it was given. A value that is *not* valid UTF-8 is kept byte for byte
+/// instead, since there is nothing better to do with it than hand it back unchanged.
+fn metadata_text(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => text.to_string(),
+        Err(_) => bytes.iter().map(|byte| *byte as char).collect(),
+    }
 }
 
 /// Headers S3 stores with an object and returns on the way out.

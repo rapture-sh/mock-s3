@@ -103,6 +103,9 @@ pub struct ListingEcho<'a> {
     /// `list-type=2` responses carry `KeyCount` and continuation tokens; version 1
     /// responses carry `Marker` instead.
     pub v2: bool,
+    /// `fetch-owner=true`. A version 2 listing leaves `Owner` out unless it is asked
+    /// for — that is the point of the parameter — while version 1 always includes it.
+    pub fetch_owner: bool,
 }
 
 /// How S3 encodes a key for `encoding-type=url`: everything outside the unreserved set,
@@ -217,10 +220,12 @@ pub fn list_bucket_result(echo: &ListingEcho<'_>, result: &ListResult) -> String
         let _ = write!(out, "<ETag>&quot;{}&quot;</ETag>", escape(&object.etag));
         let _ = write!(out, "<Size>{}</Size>", object.size);
         out.push_str("<StorageClass>STANDARD</StorageClass>");
-        let _ = write!(
-            out,
-            "<Owner><ID>{OWNER_ID}</ID><DisplayName>{OWNER_DISPLAY_NAME}</DisplayName></Owner>"
-        );
+        if !echo.v2 || echo.fetch_owner {
+            let _ = write!(
+                out,
+                "<Owner><ID>{OWNER_ID}</ID><DisplayName>{OWNER_DISPLAY_NAME}</DisplayName></Owner>"
+            );
+        }
         out.push_str("</Contents>");
     }
 
@@ -677,7 +682,28 @@ mod tests {
                 start_after: None,
                 encoding_type: None,
                 v2: true,
+                fetch_owner: false,
             }
+        }
+
+        /// A version 2 listing leaves `Owner` out unless `fetch-owner=true` — that is
+        /// what the parameter is for — while a version 1 listing always carries it.
+        #[test]
+        fn should_report_the_owner_only_when_the_listing_asked_for_it() {
+            let result = ListResult {
+                objects: vec![object("notes.txt")],
+                ..Default::default()
+            };
+
+            let mut v2 = echo("my-bucket");
+            assert!(!list_bucket_result(&v2, &result).contains("<Owner>"));
+
+            v2.fetch_owner = true;
+            assert!(list_bucket_result(&v2, &result).contains("<Owner>"));
+
+            let mut v1 = echo("my-bucket");
+            v1.v2 = false;
+            assert!(list_bucket_result(&v1, &result).contains("<Owner>"));
         }
 
         #[test]
