@@ -6,8 +6,10 @@ enough of the S3 HTTP API that the official AWS SDKs cannot tell the difference,
 objects in a mounted volume, and ships as a single static binary in a container that
 starts in milliseconds.
 
-Written in Rust, with no JVM and no runtime dependencies. A static web console comes
-baked into the binary, so you can see what your code just wrote.
+Written in Rust, with no JVM and no runtime dependencies. A second port serves an admin
+API — buckets, per-bucket reset, a log of the requests your client actually sent — which
+is how you see what your code just did. The web console that will render it is not built
+yet: that port currently answers with a placeholder page.
 
 > **This is not a deployment target.** mock-s3 is for local development environments and
 > CI. It accepts any credentials, never verifies signatures, exposes an unauthenticated
@@ -17,8 +19,8 @@ baked into the binary, so you can see what your code just wrote.
 It started inside the [Kywi](https://github.com/rapture-sh) monorepo, standing in for S3
 across that test suite. Other projects needed the same thing, so it was extracted here,
 rebuilt around a standalone protocol engine and extended well past the original — many
-buckets per instance, multipart uploads, per-bucket fault injection and a console. Kywi
-now consumes it like everyone else.
+buckets per instance, multipart uploads, bucket versioning and a request log. Kywi now
+consumes it like everyone else.
 
 
 Running it
@@ -28,11 +30,12 @@ Running it
 docker run --rm -p 9000:9000 -p 9001:9001 -v mock-s3-data:/data ghcr.io/rapture-sh/mock-s3:latest
 ```
 
-S3 API on `:9000`, web console on `:9001`. Objects live in the volume mounted at
-`/data`, so they survive a container restart and you can inspect them from the host.
+S3 API on `:9000`, admin API and console on `:9001`. Objects live in the volume mounted
+at `/data`, so they survive a container restart and you can inspect them from the host.
 
-The console is optional — it is a viewer, and `--no-console` drops it without touching
-the S3 API.
+The second port is optional — it is a viewer, and `--no-console` drops it without
+touching the S3 API. The admin API on it works today; the console UI it will serve does
+not exist yet.
 
 ```yaml
 services:
@@ -196,7 +199,7 @@ Supported operations
 | Bucket | `DeleteObjects` | working |
 | Object | `PutObject`, `GetObject`, `HeadObject`, `DeleteObject`, `CopyObject` | working, with `versionId` |
 | Object | `GetObject` with a single `Range` | working |
-| Object | `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since` | working |
+| Object | `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since` | working on `GET` and `HEAD`; not evaluated on a write |
 | Object | `GetObjectAcl`, `GetObjectTagging` | working |
 | Multipart | `CreateMultipartUpload`, `UploadPart`, `CompleteMultipartUpload`, `AbortMultipartUpload`, `ListParts`, `ListMultipartUploads` | working |
 
@@ -235,9 +238,29 @@ Two divergences worth knowing:
   stops it falling through to `DeleteBucket` and destroying a bucket on a request that
   asked for nothing of the kind.
 
-**Not implemented:** `UploadPartCopy`, MFA delete, and real ACL or policy enforcement.
+**Not implemented**, and worth reading before you point a test suite at this:
+
+- **No ACL, policy or signature enforcement.** Any credentials are accepted. A test that
+  asserts a request is *refused* will not get what it expects — that is rule 7, not an
+  oversight.
+- **No encryption.** `SSE-C` and `SSE-KMS` are absent by design; see `SECURITY.md`.
+- **Conditional *writes*.** `If-Match` and `If-None-Match` work on `GET` and `HEAD`; on
+  `PUT`, copy and delete they are not evaluated, so there is no atomic create yet.
+- **Object lock, retention and legal hold**, **bucket logging**, **lifecycle
+  expiration**, and **object tagging stored for real** — the settings above are accepted
+  and ignored, so nothing acts on them.
+- **Browser form POST uploads**, `UploadPartCopy`, `GetObjectAttributes`, `S3 Select`,
+  `partNumber` on `GET`, `ListBuckets` pagination, `Expect: 100-continue`, MFA delete,
+  and the 1000-key limit on `DeleteObjects`.
+
 Anything genuinely missing answers `501 NotImplemented` rather than pretending to
-succeed, so a test that needs it fails loudly instead of passing against a lie.
+succeed, so a test that needs it fails loudly instead of passing against a lie. The one
+exception is the list above's first two entries: a request that *should* be refused is
+allowed instead, because there is nothing here to refuse it with.
+
+[`tests/s3-tests/known-failures.txt`](tests/s3-tests/known-failures.txt) is the exact
+score against [ceph/s3-tests](https://github.com/ceph/s3-tests), grouped by the reason
+each test fails. It is the honest answer to "will this work for me".
 
 Working today alongside the operations: user metadata round-tripping through
 `x-amz-meta-*`, content type preservation, MD5 ETags, `encoding-type=url` listings,
