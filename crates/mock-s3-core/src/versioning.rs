@@ -544,10 +544,17 @@ impl Engine {
             return found(true);
         }
 
-        Err(Error::NoSuchVersion {
-            key: key.to_string(),
-            version_id: version_id.to_string(),
-        })
+        // A delete of something already gone is a success, the same way deleting an
+        // absent key is. It has to be: two clients emptying a bucket at once both ask for
+        // every version, and the one that arrives second would otherwise be told its
+        // request failed when the outcome it wanted is exactly what happened.
+        // ceph/s3-tests pins this in `test_versioning_concurrent_multi_object_delete`,
+        // where five threads delete the same fifteen versions and every one of them has
+        // to come back clean.
+        //
+        // A *read* of a version that does not exist is still `NoSuchVersion`: there the
+        // caller wanted bytes and there are none to give.
+        found(false)
     }
 
     async fn write_marker(&self, bucket: &str, key: &str, version_id: &str) -> Result<()> {
@@ -1120,7 +1127,10 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn should_report_a_version_id_that_names_nothing() {
+        /// Deleting a version that is already gone succeeds, the same way deleting an
+        /// absent key does: two clients emptying a bucket at once both ask for every
+        /// version, and the second must not be told it failed at what it wanted.
+        async fn should_succeed_when_the_version_is_already_gone() {
             let engine = engine("absent").await;
             engine
                 .put_bucket_versioning("absent", VersioningStatus::Enabled)
@@ -1128,8 +1138,27 @@ mod tests {
                 .unwrap();
             put(&engine, "absent", "notes.txt", "one").await;
 
-            let error = engine
+            let outcome = engine
                 .delete_object_version("absent", "notes.txt", Some("deadbeef"))
+                .await
+                .unwrap();
+
+            assert_eq!(outcome.version_id.as_deref(), Some("deadbeef"));
+            assert!(!outcome.delete_marker);
+        }
+
+        /// Reading one is still an error, though: there the caller wanted bytes.
+        #[tokio::test]
+        async fn should_still_refuse_to_read_a_version_that_names_nothing() {
+            let engine = engine("absentread").await;
+            engine
+                .put_bucket_versioning("absentread", VersioningStatus::Enabled)
+                .await
+                .unwrap();
+            put(&engine, "absentread", "notes.txt", "one").await;
+
+            let error = engine
+                .get_object_version("absentread", "notes.txt", Some("deadbeef"))
                 .await
                 .unwrap_err();
 

@@ -501,13 +501,9 @@ s3tests/functional/test_s3.py::test_list_buckets_paginated
 # torrent is not implemented (1)
 s3tests/functional/test_s3.py::test_get_object_torrent
 
-# not yet triaged (9)
+# not yet triaged (5)
 s3tests/functional/test_s3.py::test_bucket_get_location
-s3tests/functional/test_s3.py::test_bucket_listv2_fetchowner_defaultempty
-s3tests/functional/test_s3.py::test_bucket_listv2_fetchowner_empty
 s3tests/functional/test_s3.py::test_cors_origin_response
 s3tests/functional/test_s3.py::test_list_multipart_upload_owner
 s3tests/functional/test_s3.py::test_multipart_resend_first_finishes_last
-s3tests/functional/test_s3.py::test_object_content_encoding_aws_chunked
-s3tests/functional/test_s3.py::test_object_set_get_unicode_metadata
 s3tests/functional/test_s3.py::test_versioning_concurrent_multi_object_delete

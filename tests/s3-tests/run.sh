@@ -60,6 +60,10 @@ reasons=(
   "the 1000-key limit on DeleteObjects is not enforced@@delete_key_limit"
   "ListBuckets pagination is not implemented@@list_buckets_paginated"
   "torrent is not implemented@@torrent"
+  "one region only: a LocationConstraint is accepted and ignored@@bucket_get_location"
+  "no ACL enforcement: the test needs a public-read bucket to refuse a write@@cors_origin_response"
+  "no second account: the suite needs two real principals@@multipart_upload_owner"
+  "a duplicate part number in CompleteMultipartUpload is refused, not resolved to the last write@@resend_first_finishes_last"
 )
 
 # Rewrite a sorted list of test ids as the same list grouped under its reasons.

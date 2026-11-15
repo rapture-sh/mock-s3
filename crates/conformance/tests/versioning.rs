@@ -448,6 +448,58 @@ mod delete_objects {
         assert!(deleted[0].delete_marker_version_id().is_some());
     }
 
+    /// Two clients emptying a bucket at once both ask for every version, so the second
+    /// request to arrive deletes things that are already gone — and has to report
+    /// success, because the outcome it asked for is exactly what happened. Repeating the
+    /// same batch is the same situation without the threads.
+    #[tokio::test]
+    async fn should_report_success_when_the_same_batch_is_deleted_twice() {
+        let h = versioned().await;
+        put(&h, "notes.txt", "one").await;
+        put(&h, "notes.txt", "two").await;
+
+        let listed =
+            h.s3.list_object_versions()
+                .bucket(BUCKET)
+                .send()
+                .await
+                .unwrap();
+        let targets: Vec<ObjectIdentifier> = listed
+            .versions()
+            .iter()
+            .map(|version| {
+                ObjectIdentifier::builder()
+                    .key(version.key().unwrap())
+                    .set_version_id(version.version_id.clone())
+                    .build()
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(targets.len(), 2);
+
+        for attempt in 1..=2 {
+            let result =
+                h.s3.delete_objects()
+                    .bucket(BUCKET)
+                    .delete(
+                        Delete::builder()
+                            .set_objects(Some(targets.clone()))
+                            .build()
+                            .unwrap(),
+                    )
+                    .send()
+                    .await
+                    .unwrap();
+
+            assert_eq!(
+                result.errors().len(),
+                0,
+                "attempt {attempt} reported errors"
+            );
+            assert_eq!(result.deleted().len(), 2, "attempt {attempt}");
+        }
+    }
+
     /// Enumerating `?versions` and deleting each one is how a client empties a versioned
     /// bucket, so the two have to agree on what is there.
     #[tokio::test]
