@@ -2,12 +2,6 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "mock-s3",
-      "runtimeExecutable": "cargo",
-      "runtimeArgs": ["run"],
-      "port": 9001
-    },
-    {
       "name": "console",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--dir", "web", "dev"],

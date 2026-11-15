@@ -14,5 +14,6 @@ mock-s3-proto = { workspace = true }
 axum = { workspace = true }
 bytes = { workspace = true }
 http = { workspace = true }
+rust-embed = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }

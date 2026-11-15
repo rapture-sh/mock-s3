@@ -197,12 +197,18 @@ pub fn router(
         .route("/_admin/requests", get(requests))
         .route("/_admin/reset", post(reset))
         .route("/_admin/reset/:bucket", post(reset_bucket))
-        .fallback(get(index))
+        .fallback(get(assets))
         .with_state(ConsoleState {
             engine,
             request_log,
             backend,
         })
+}
+
+/// Any path the admin API does not claim is the console: an asset, or `index.html` for
+/// a route the browser handles itself.
+async fn assets(uri: http::Uri) -> Response {
+    assets::serve(uri.path())
 }
 
 async fn index() -> Response {

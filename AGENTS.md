@@ -20,8 +20,8 @@ requests, multipart uploads, `CopyObject`, `DeleteObjects`, bucket versioning, C
 preflight, the bucket settings clients probe, `aws-chunked` uploads, request ids and a
 request log all work, verified by the Rust SDK suite in `crates/conformance`, the
 JavaScript SDK suite in `tests/`, the AWS CLI script in `tests/cli/` and the
-ceph/s3-tests target in `tests/s3-tests/`. Fault injection has no code, and neither does
-the console frontend — the console serves a placeholder page over a working admin API.
+ceph/s3-tests target in `tests/s3-tests/`. Fault injection has no code. The console frontend is
+in `web/`: a React app over the JSON admin API, embedded in the release binary.
 Where this file names something that has not landed, it is the contract for building it
 rather than code you can read, so check that a file exists before assuming it.
 
@@ -147,7 +147,7 @@ crates/
   mock-s3-testkit/           not created yet: in-process instance for a Rust test
   conformance/               not created yet: tests driven by the real aws-sdk-s3
 
-web/                         not created yet: the console. Vite, React, TypeScript.
+web/                         the console. Vite, React, TypeScript, TanStack Router.
 xtask/                       build orchestration
 ```
 

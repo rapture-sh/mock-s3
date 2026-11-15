@@ -1,13 +1,64 @@
 //! The console's static assets.
 //!
-//! The React console is not built yet. Until `web/` exists, this serves a page that says
-//! so and points at the admin API, which is more useful than a 404. When the frontend
-//! lands this module switches to `rust-embed` over `web/dist`: reading from disk in
-//! debug builds, embedded in the binary in release builds.
+//! Embedded from `web/dist` in a release build, so the binary is self-contained and the
+//! container needs nothing beside it. In a debug build `rust-embed` reads the same files
+//! from disk instead, so `pnpm dev` and `cargo run` can be used together without
+//! rebuilding the server to see a change.
+//!
+//! When `web/dist` is not there at all — a fresh checkout where nobody has run
+//! `pnpm build` — this serves a page saying so rather than a 404, because a blank
+//! console with no explanation is the least useful failure available.
 
 use axum::response::{Html, IntoResponse, Response};
+use http::{StatusCode, header};
+use rust_embed::RustEmbed;
 
-const PLACEHOLDER: &str = r#"<!doctype html>
+#[derive(RustEmbed)]
+#[folder = "../../web/dist"]
+struct Assets;
+
+const INDEX: &str = "index.html";
+
+/// Serve one asset by path, or the console's `index.html` for anything else.
+///
+/// Unknown paths fall back to `index.html` on purpose: the console routes in the
+/// browser, so `/buckets/my-bucket` is a page the server knows nothing about and must
+/// still answer with the app rather than a 404.
+pub fn serve(path: &str) -> Response {
+    let trimmed = path.trim_start_matches('/');
+
+    if !trimmed.is_empty()
+        && let Some(file) = Assets::get(trimmed)
+    {
+        let mime = file.metadata.mimetype().to_string();
+
+        return (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, mime)],
+            file.data.into_owned(),
+        )
+            .into_response();
+    }
+
+    index()
+}
+
+/// The console itself.
+pub fn index() -> Response {
+    match Assets::get(INDEX) {
+        Some(file) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            file.data.into_owned(),
+        )
+            .into_response(),
+        None => Html(NOT_BUILT).into_response(),
+    }
+}
+
+/// Shown when `web/dist` is absent. The admin API still works, so this says how to reach
+/// it and how to build the console.
+const NOT_BUILT: &str = r#"<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -24,38 +75,34 @@ const PLACEHOLDER: &str = r#"<!doctype html>
   main { max-width: 42rem; margin: 0 auto; padding: 4rem 16px; }
   h1 { font-size: 1.5rem; margin: 0 0 .25rem; letter-spacing: -.01em; }
   p.lede { color: var(--muted); margin: 0 0 2.5rem; }
-  h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em;
-       color: var(--muted); margin: 2.5rem 0 .75rem; font-weight: 600; }
+  h2 { font-size: .8rem; letter-spacing: .02em; color: var(--muted);
+       margin: 2.5rem 0 .75rem; font-weight: 600; }
   table { width: 100%; border-collapse: collapse; }
   td { padding: .5rem 0; border-bottom: 1px solid var(--line); vertical-align: top; }
-  td:first-child { width: 11rem; }
+  td:first-child { width: 13rem; }
   code { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
 </style>
 </head>
 <body>
 <main>
   <h1>mock-s3</h1>
-  <p class="lede">The S3 API is live. This console is still being built.</p>
+  <p class="lede">The S3 API is live. The console has not been built in this checkout.</p>
 
-  <h2>Admin API</h2>
+  <h2>Build it</h2>
   <table>
-    <tr><td><code>GET /_admin/health</code></td><td>Liveness, region and backend</td></tr>
-    <tr><td><code>GET /_admin/buckets</code></td><td>Buckets with object counts and sizes</td></tr>
-    <tr><td><code>POST /_admin/reset</code></td><td>Drop every bucket</td></tr>
-    <tr><td><code>POST /_admin/reset/{bucket}</code></td><td>Empty one bucket, keep it</td></tr>
+    <tr><td><code>pnpm --dir web install</code></td><td>Once</td></tr>
+    <tr><td><code>pnpm --dir web build</code></td><td>Writes <code>web/dist</code></td></tr>
+    <tr><td><code>cargo xtask dist</code></td><td>Both, then the release binary</td></tr>
   </table>
 
-  <h2>Pointing a client at it</h2>
+  <h2>Admin API, which works either way</h2>
   <table>
-    <tr><td><code>Endpoint</code></td><td>The S3 port, not this one</td></tr>
-    <tr><td><code>Addressing</code></td><td>Path-style &mdash; set <code>forcePathStyle</code></td></tr>
-    <tr><td><code>Credentials</code></td><td>Anything; they are parsed, never verified</td></tr>
+    <tr><td><code>GET /_admin/health</code></td><td>Region, backend, bucket count</td></tr>
+    <tr><td><code>GET /_admin/buckets</code></td><td>Buckets with counts and sizes</td></tr>
+    <tr><td><code>GET /_admin/requests</code></td><td>What clients have been sending</td></tr>
+    <tr><td><code>POST /_admin/reset</code></td><td>Drop every bucket</td></tr>
   </table>
 </main>
 </body>
 </html>
 "#;
-
-pub fn index() -> Response {
-    Html(PLACEHOLDER).into_response()
-}

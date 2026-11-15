@@ -29,6 +29,9 @@ percent-encoding = "2.3.1"
 # Reading only: CompleteMultipartUpload and DeleteObjects take XML bodies. Responses are
 # still built by hand in `mock-s3-proto::xml`, so their shapes stay exact.
 quick-xml = "0.37.2"
+# The console assets. Embedded in release builds so the binary is self-contained; read
+# from web/dist on disk in debug builds, so `pnpm dev` does not need a rebuild.
+rust-embed = { version = "8.5.0", features = ["mime-guess"] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.135"
 tempfile = "3.15.0"

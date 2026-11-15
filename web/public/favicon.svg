@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <style>
+    .mark { fill: #16161a; }
+    .glyph { fill: #fbfbfd; }
+    @media (prefers-color-scheme: dark) {
+      .mark { fill: #f2f2f5; }
+      .glyph { fill: #121216; }
+    }
+  </style>
+  <rect class="mark" width="32" height="32" rx="7" />
+  <!-- Three stacked bars: objects in a bucket, which is all this stores. -->
+  <rect class="glyph" x="8" y="9" width="16" height="3.5" rx="1.75" />
+  <rect class="glyph" x="8" y="14.25" width="16" height="3.5" rx="1.75" />
+  <rect class="glyph" x="8" y="19.5" width="10" height="3.5" rx="1.75" />
+</svg>

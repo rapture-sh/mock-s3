@@ -6,10 +6,9 @@ enough of the S3 HTTP API that the official AWS SDKs cannot tell the difference,
 objects in a mounted volume, and ships as a single static binary in a container that
 starts in milliseconds.
 
-Written in Rust, with no JVM and no runtime dependencies. A second port serves an admin
-API — buckets, per-bucket reset, a log of the requests your client actually sent — which
-is how you see what your code just did. The web console that will render it is not built
-yet: that port currently answers with a placeholder page.
+Written in Rust, with no JVM and no runtime dependencies. A second port serves a web
+console, baked into the binary: browse buckets and objects as folders, create and delete
+buckets, upload files, and watch the requests your client is actually sending.
 
 > **This is not a deployment target.** mock-s3 is for local development environments and
 > CI. It accepts any credentials, never verifies signatures, exposes an unauthenticated
@@ -33,9 +32,9 @@ docker run --rm -p 9000:9000 -p 9001:9001 -v mock-s3-data:/data ghcr.io/rapture-
 S3 API on `:9000`, admin API and console on `:9001`. Objects live in the volume mounted
 at `/data`, so they survive a container restart and you can inspect them from the host.
 
-The second port is optional — it is a viewer, and `--no-console` drops it without
-touching the S3 API. The admin API on it works today; the console UI it will serve does
-not exist yet.
+The second port is optional — `--no-console` drops it without touching the S3 API. It
+serves the console and the JSON admin API the console reads, so anything the console can
+do is scriptable with `curl` against `/_admin`.
 
 ```yaml
 services:
