@@ -1,0 +1,12 @@
+target/
+data/
+web/node_modules/
+web/dist/
+.git/
+.github/
+.claude/
+.agents/
+*.md
+!README.md
+.gitignore
+.gitattributes

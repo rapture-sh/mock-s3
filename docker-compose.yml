@@ -1,0 +1,24 @@
+# Drop this service into a project's compose file to give its tests an S3 endpoint.
+#
+#   docker compose up              pull and run the published image
+#   docker compose up --build      build this checkout instead
+#
+# The S3 API is on 9000 and the console on 9001. Objects live in the named volume, so
+# they survive a restart and can be inspected from the host.
+
+services:
+  mock-s3:
+    image: rapturesh/mock-s3:latest
+    build: .
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - mock-s3-data:/data
+    environment:
+      MOCK_S3_REGION: us-east-1
+      MOCK_S3_LOG: info
+    restart: unless-stopped
+
+volumes:
+  mock-s3-data:
