@@ -501,9 +501,14 @@ s3tests/functional/test_s3.py::test_list_buckets_paginated
 # torrent is not implemented (1)
 s3tests/functional/test_s3.py::test_get_object_torrent
 
-# not yet triaged (5)
+# one region only: a LocationConstraint is accepted and ignored (1)
 s3tests/functional/test_s3.py::test_bucket_get_location
+
+# no ACL enforcement: the test needs a public-read bucket to refuse a write (1)
 s3tests/functional/test_s3.py::test_cors_origin_response
+
+# no second account: the suite needs two real principals (1)
 s3tests/functional/test_s3.py::test_list_multipart_upload_owner
+
+# a duplicate part number in CompleteMultipartUpload is refused, not resolved to the last write (1)
 s3tests/functional/test_s3.py::test_multipart_resend_first_finishes_last
-s3tests/functional/test_s3.py::test_versioning_concurrent_multi_object_delete
