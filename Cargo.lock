@@ -1616,6 +1616,7 @@ name = "mock-s3-console"
 version = "1.0.0"
 dependencies = [
  "axum",
+ "bytes",
  "http 1.5.0",
  "mock-s3-core",
  "mock-s3-proto",

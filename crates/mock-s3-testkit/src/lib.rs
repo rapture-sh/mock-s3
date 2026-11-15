@@ -64,7 +64,7 @@ impl Drop for Instance {
 
 /// An instance backed by memory. The right default for a test.
 pub async fn spawn() -> std::io::Result<Instance> {
-    spawn_with(Arc::new(MemoryStore::new()), None).await
+    spawn_with(Arc::new(MemoryStore::new()), None, "memory".to_string()).await
 }
 
 /// An instance backed by a directory you control, for tests about the on-disk layout.
@@ -72,7 +72,7 @@ pub async fn spawn_on_disk(data: impl AsRef<Path>) -> std::io::Result<Instance> 
     let store = DiskStore::open(data.as_ref())
         .await
         .map_err(std::io::Error::other)?;
-    spawn_with(Arc::new(store), None).await
+    spawn_with(Arc::new(store), None, data.as_ref().display().to_string()).await
 }
 
 /// An instance backed by a temporary directory that is removed with the instance.
@@ -81,12 +81,14 @@ pub async fn spawn_temp() -> std::io::Result<Instance> {
     let store = DiskStore::open(temp.path())
         .await
         .map_err(std::io::Error::other)?;
-    spawn_with(Arc::new(store), Some(temp)).await
+    let described = temp.path().display().to_string();
+    spawn_with(Arc::new(store), Some(temp), described).await
 }
 
 async fn spawn_with(
     store: Arc<dyn Store>,
     temp: Option<tempfile::TempDir>,
+    backend: String,
 ) -> std::io::Result<Instance> {
     let engine = Arc::new(Engine::new(store, REGION));
 
@@ -113,7 +115,7 @@ async fn spawn_with(
             .await;
     });
 
-    let console_router = mock_s3_console::router(engine, request_log);
+    let console_router = mock_s3_console::router(engine, request_log, backend);
     let console_signal = shutdown.subscribe();
     tokio::spawn(async move {
         let _ = axum::serve(console_listener, console_router.into_make_service())

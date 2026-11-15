@@ -75,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let console = console_listener.map(|listener| {
-        let router = mock_s3_console::router(engine.clone(), request_log.clone());
+        let router = mock_s3_console::router(engine.clone(), request_log.clone(), backend.clone());
         tokio::spawn(async move {
             axum::serve(listener, router.into_make_service())
                 .with_graceful_shutdown(shutdown())
