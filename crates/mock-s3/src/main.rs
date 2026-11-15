@@ -49,10 +49,20 @@ async fn main() -> anyhow::Result<()> {
         Some(_) => tracing::info!("console     http://localhost:{}", cli.console_port),
         None => tracing::info!("console     disabled"),
     }
-    tracing::info!("addressing  path-style; set forcePathStyle on your client");
+    match &cli.base_domain {
+        Some(domain) => tracing::info!(
+            "addressing  path-style, and virtual-hosted under *.{}",
+            domain
+        ),
+        None => tracing::info!("addressing  path-style; set forcePathStyle on your client"),
+    }
+
+    let proto_config = mock_s3_proto::ProtoConfig {
+        base_domain: cli.base_domain.clone(),
+    };
 
     let s3 = {
-        let router = mock_s3_proto::router(engine.clone());
+        let router = mock_s3_proto::router(engine.clone(), proto_config);
         tokio::spawn(async move {
             axum::serve(s3_listener, router.into_make_service())
                 .with_graceful_shutdown(shutdown())

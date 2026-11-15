@@ -100,7 +100,7 @@ async fn spawn_with(
 
     let (shutdown, _) = watch::channel(false);
 
-    let s3_router = mock_s3_proto::router(engine.clone());
+    let s3_router = mock_s3_proto::router(engine.clone(), Default::default());
     let s3_signal = shutdown.subscribe();
     tokio::spawn(async move {
         let _ = axum::serve(s3_listener, s3_router.into_make_service())

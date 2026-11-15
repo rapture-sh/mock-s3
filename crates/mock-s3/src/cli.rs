@@ -40,6 +40,14 @@ pub struct Cli {
     #[arg(long, env = "MOCK_S3_REGION", default_value = "us-east-1")]
     pub region: String,
 
+    /// Serve virtual-hosted addressing under this host suffix, so that
+    /// `my-bucket.<suffix>` addresses `my-bucket`.
+    ///
+    /// Off by default, because with it set every hostname's first label would be read as
+    /// a bucket name — including `localhost`.
+    #[arg(long, env = "MOCK_S3_BASE_DOMAIN")]
+    pub base_domain: Option<String>,
+
     /// Log level, or a full tracing filter such as `mock_s3=debug,axum=info`.
     #[arg(long, env = "MOCK_S3_LOG", default_value = "info")]
     pub log: String,

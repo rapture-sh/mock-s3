@@ -16,4 +16,4 @@ pub mod token;
 pub mod xml;
 
 pub use error::S3Error;
-pub use router::router;
+pub use router::{ProtoConfig, router};

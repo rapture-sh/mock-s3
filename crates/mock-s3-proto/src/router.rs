@@ -14,7 +14,18 @@ use crate::ops;
 /// Path-style (`/{bucket}/{key}`) is what a client pointed at localhost uses, because
 /// virtual-hosted style would need wildcard DNS. It is also why the console is on its
 /// own port: here, the URL root *is* the bucket namespace.
-pub fn router(engine: Arc<Engine>) -> Router {
+/// Wire-level settings that are not the engine's business.
+#[derive(Clone, Debug, Default)]
+pub struct ProtoConfig {
+    /// Host suffix under which `<bucket>.<suffix>` addresses a bucket.
+    ///
+    /// Off by default: with it unset, a request to `localhost` or an IP can never be
+    /// misread as naming a bucket, which matters because the first label of any hostname
+    /// would otherwise be treated as one.
+    pub base_domain: Option<String>,
+}
+
+pub fn router(engine: Arc<Engine>, config: ProtoConfig) -> Router {
     let routes = Router::new()
         .route("/", get(ops::service::list_buckets))
         .route(
@@ -43,6 +54,67 @@ pub fn router(engine: Arc<Engine>) -> Router {
         .fallback_service(routes)
         .layer(axum::middleware::from_fn(attach_request_id))
         .layer(axum::middleware::from_fn(normalize_bucket_path))
+        .layer(axum::middleware::from_fn(move |request, next| {
+            let config = config.clone();
+            async move { rewrite_virtual_host(request, next, config).await }
+        }))
+}
+
+/// Turn a virtual-hosted request into a path-style one.
+///
+/// `GET /key` with `Host: my-bucket.s3.local` becomes `GET /my-bucket/key`, so the route
+/// table only ever has to describe one addressing style. Clients that cannot be put into
+/// path-style mode need this; it does nothing unless `--base-domain` is set.
+async fn rewrite_virtual_host(mut request: Request, next: Next, config: ProtoConfig) -> Response {
+    let Some(base_domain) = config.base_domain.as_deref() else {
+        return next.run(request).await;
+    };
+
+    let host = request
+        .headers()
+        .get(http::header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.to_string());
+
+    if let Some(host) = host
+        && let Some(bucket) = bucket_from_host(&host, base_domain)
+    {
+        let path = request.uri().path();
+        let rebuilt = match request.uri().query() {
+            Some(query) => format!("/{bucket}{path}?{query}"),
+            None => format!("/{bucket}{path}"),
+        };
+
+        let mut parts = request.uri().clone().into_parts();
+        match rebuilt.parse() {
+            Ok(path_and_query) => {
+                parts.path_and_query = Some(path_and_query);
+                match http::Uri::from_parts(parts) {
+                    Ok(uri) => {
+                        tracing::debug!(%host, bucket, "virtual-hosted request rewritten");
+                        *request.uri_mut() = uri;
+                    }
+                    Err(error) => tracing::debug!(%error, "could not rebuild the request URI"),
+                }
+            }
+            Err(error) => tracing::debug!(%error, "could not parse the rewritten path"),
+        }
+    }
+
+    next.run(request).await
+}
+
+/// The bucket named by a `Host` header, if it names one.
+fn bucket_from_host(host: &str, base_domain: &str) -> Option<String> {
+    // The header carries the port; the base domain does not.
+    let hostname = host.split(':').next()?.trim_end_matches('.');
+    let suffix = format!(".{}", base_domain.trim_start_matches('.'));
+
+    let bucket = hostname.strip_suffix(&suffix)?;
+    if bucket.is_empty() {
+        return None;
+    }
+    Some(bucket.to_string())
 }
 
 /// Give every response a request id, the way S3 does.
@@ -110,4 +182,54 @@ async fn unmatched(method: http::Method, uri: http::Uri) -> crate::S3Error {
     tracing::warn!(%method, %uri, "no route matched");
 
     crate::S3Error::not_implemented(&format!("{method} {}", uri.path()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod bucket_from_host {
+        use super::*;
+
+        #[test]
+        fn should_read_the_bucket_from_a_matching_host() {
+            let found = bucket_from_host("my-bucket.s3.local", "s3.local");
+
+            assert_eq!(found.as_deref(), Some("my-bucket"));
+        }
+
+        #[test]
+        fn should_ignore_the_port() {
+            let found = bucket_from_host("my-bucket.s3.local:9000", "s3.local");
+
+            assert_eq!(found.as_deref(), Some("my-bucket"));
+        }
+
+        #[test]
+        fn should_return_nothing_for_the_bare_base_domain() {
+            assert!(bucket_from_host("s3.local", "s3.local").is_none());
+            assert!(bucket_from_host("s3.local:9000", "s3.local").is_none());
+        }
+
+        #[test]
+        fn should_return_nothing_for_an_unrelated_host() {
+            assert!(bucket_from_host("localhost:9000", "s3.local").is_none());
+            assert!(bucket_from_host("127.0.0.1:9000", "s3.local").is_none());
+        }
+
+        #[test]
+        fn should_accept_a_bucket_name_containing_dots() {
+            // Legal in S3, and only awkward because of TLS, which does not apply here.
+            let found = bucket_from_host("my.bucket.s3.local", "s3.local");
+
+            assert_eq!(found.as_deref(), Some("my.bucket"));
+        }
+
+        #[test]
+        fn should_tolerate_a_base_domain_written_with_a_leading_dot() {
+            let found = bucket_from_host("my-bucket.s3.local", ".s3.local");
+
+            assert_eq!(found.as_deref(), Some("my-bucket"));
+        }
+    }
 }
