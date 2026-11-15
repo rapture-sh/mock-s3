@@ -5,7 +5,11 @@
 
 # console frontend
 /web/node_modules
-/web/dist
+# rust-embed needs this folder to exist at compile time, or the console crate — and so
+# the whole workspace — fails to build in a checkout where nobody has run `pnpm build`.
+# The contents are ignored; the directory itself is tracked.
+/web/dist/*
+!/web/dist/.gitkeep
 /web/.vite
 
 # client-side test suite

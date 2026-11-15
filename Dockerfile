@@ -1,5 +1,23 @@
 # syntax=docker/dockerfile:1
 
+# Console stage. The assets are embedded into the binary by `rust-embed`, so they have to
+# exist before the Rust build runs — `web/dist` is in .dockerignore precisely so the
+# image builds its own rather than shipping whatever happened to be on the host.
+FROM node:22-bookworm-slim AS console
+
+WORKDIR /web
+
+RUN corepack enable
+
+# Manifests first: dependencies only re-resolve when they actually change, not on every
+# edit to a component.
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+
+COPY web ./
+RUN pnpm build
+
 # Build stage. Cache mounts keep the crates.io registry and the target directory out of
 # the image layers, so a code-only change rebuilds in seconds instead of re-fetching and
 # re-compiling the whole dependency tree.
@@ -11,6 +29,7 @@ COPY rust-toolchain.toml Cargo.toml Cargo.lock ./
 COPY .cargo ./.cargo
 COPY crates ./crates
 COPY xtask ./xtask
+COPY --from=console /web/dist ./web/dist
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \

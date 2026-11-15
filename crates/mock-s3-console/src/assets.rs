@@ -5,9 +5,14 @@
 //! from disk instead, so `pnpm dev` and `cargo run` can be used together without
 //! rebuilding the server to see a change.
 //!
-//! When `web/dist` is not there at all — a fresh checkout where nobody has run
+//! When `web/dist` holds no `index.html` — a fresh checkout where nobody has run
 //! `pnpm build` — this serves a page saying so rather than a 404, because a blank
 //! console with no explanation is the least useful failure available.
+//!
+//! The directory itself is tracked, empty, with a `.gitkeep`. `rust-embed` resolves the
+//! folder when the derive expands, so a missing directory is a *compile* error, and
+//! without the placeholder the whole workspace would fail to build for anyone who had
+//! not built the console first.
 
 use axum::response::{Html, IntoResponse, Response};
 use http::{StatusCode, header};

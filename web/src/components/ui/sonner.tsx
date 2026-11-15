@@ -5,15 +5,14 @@ import {
   OctagonXIcon,
   TriangleAlertIcon,
 } from "lucide-react"
-import { useTheme } from "next-themes"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 
+// The console is dark only, so the theme is fixed rather than read from a provider. The
+// shadcn CLI writes this file expecting `next-themes`, which is a Next.js package this
+// app does not use; re-running `shadcn add sonner` will put that import back.
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme()
-
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
       className="toaster group"
       icons={{
         success: <CircleCheckIcon className="size-4" />,
@@ -30,6 +29,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--border-radius": "var(--radius)",
         } as React.CSSProperties
       }
+      theme="dark"
       toastOptions={{
         classNames: {
           toast: "cn-toast",
