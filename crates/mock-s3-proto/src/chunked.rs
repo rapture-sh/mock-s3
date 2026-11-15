@@ -110,7 +110,10 @@ fn decode_frames(body: &[u8]) -> Result<Vec<u8>, String> {
 
         // `<hex-size>` on its own, or `<hex-size>;chunk-signature=…`. Any extension
         // after the first semicolon is metadata we do not need.
-        let size_field = header.split(|byte| *byte == b';').next().unwrap_or_default();
+        let size_field = header
+            .split(|byte| *byte == b';')
+            .next()
+            .unwrap_or_default();
         let size_text = std::str::from_utf8(size_field)
             .map_err(|_| "a chunk size was not valid UTF-8".to_string())?
             .trim();
@@ -145,7 +148,8 @@ fn find_crlf(haystack: &[u8]) -> Option<usize> {
 mod tests {
     use super::*;
 
-    const SIGNATURE: &str = "chunk-signature=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const SIGNATURE: &str =
+        "chunk-signature=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     fn headers_for(decoded_length: Option<usize>, streaming: bool) -> HeaderMap {
         let mut headers = HeaderMap::new();
@@ -184,7 +188,10 @@ mod tests {
         #[test]
         fn should_detect_an_aws_chunked_content_encoding() {
             let mut headers = HeaderMap::new();
-            headers.insert(http::header::CONTENT_ENCODING, "aws-chunked".parse().unwrap());
+            headers.insert(
+                http::header::CONTENT_ENCODING,
+                "aws-chunked".parse().unwrap(),
+            );
 
             assert!(is_chunked(&headers));
         }

@@ -178,9 +178,13 @@ threshold, usually around 8 MB, with no change in caller code. Uploading a file 
 than that through an SDK gets a `501` until it is implemented.
 
 Working today alongside the operations: user metadata round-tripping through
-`x-amz-meta-*`, content type preservation, MD5 ETags, and bucket name validation that
-follows the real rules so an invalid name fails here instead of passing locally and
-failing against AWS.
+`x-amz-meta-*`, content type preservation, MD5 ETags, `encoding-type=url` listings,
+`x-amz-request-id` on every response, and bucket name validation that follows the real
+rules so an invalid name fails here instead of passing locally and failing against AWS.
+
+Streaming-signed uploads (`Content-Encoding: aws-chunked`) are decoded, which is what
+the AWS CLI's high-level commands use — without it `aws s3 cp` stores the chunk framing
+alongside your bytes and the ETag silently stops matching.
 
 Out of scope: IAM and real signature verification, replication, lifecycle transitions,
 storage classes beyond `STANDARD`, and anything whose only honest implementation is
