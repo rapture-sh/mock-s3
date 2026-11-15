@@ -178,6 +178,7 @@ Supported operations
 | Bucket | `ListObjectsV2`, `ListObjects` | working, with prefix, delimiter, `max-keys` and continuation tokens |
 | Bucket | `GetBucketLocation`, `GetBucketVersioning` | working |
 | Bucket | `GetBucketAcl`, `GetBucketRequestPayment` | working |
+| Bucket | `PutBucketCors`, `GetBucketCors`, `DeleteBucketCors`, and `OPTIONS` preflight | working |
 | Bucket | `DeleteObjects` | working |
 | Object | `PutObject`, `GetObject`, `HeadObject`, `DeleteObject`, `CopyObject` | working |
 | Object | `GetObject` with a single `Range` | working |
@@ -190,11 +191,18 @@ own above roughly 8 MB, so a caller who never mentions multipart still depends o
 multipart object reports the ETag S3 reports — a digest over the parts' digests with a
 `-N` suffix, not the MD5 of the assembled bytes.
 
-The bucket settings clients probe on connect — CORS, lifecycle, policy, tagging,
-encryption, website, replication, object lock, notification, logging, accelerate — answer
-the way real S3 does when nothing is configured, with the specific "not configured" error
-or an empty document. mock-s3 stores none of them: a `PUT` of one is accepted and
-ignored, because pretending to enforce a lifecycle rule would be worse than refusing.
+The bucket settings clients probe on connect — lifecycle, policy, tagging, encryption,
+website, replication, object lock, notification, logging, accelerate — answer the way
+real S3 does when nothing is configured, with the specific "not configured" error or an
+empty document. mock-s3 stores none of those: a `PUT` of one is accepted and ignored,
+because pretending to enforce a lifecycle rule would be worse than refusing.
+
+**CORS is the exception, and is stored for real**, because a browser cannot talk to the
+server at all without it. Rules are evaluated on preflight — origin, method and
+requested headers, including `https://*.example.com` wildcards — and the
+`Access-Control-*` headers go on ordinary responses too, which is the half that is easy
+to miss. With no configuration stored, a preflight is refused, exactly as S3 refuses it;
+a mock that allowed everything would let a web app pass here and fail against AWS.
 
 **Not implemented:** bucket versioning (`ListObjectVersions`, version ids, delete
 markers), `UploadPartCopy`, and real ACL or policy enforcement. Anything genuinely
@@ -245,7 +253,14 @@ Welcome, and you do not need permission to start. The `501` rows in the table ab
 the most useful place to begin.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) first. The rule that
-outranks the rest: match real S3, or document the divergence. Commits are `feat:` or
+outranks the rest: match real S3, or document the divergence.
+
+Three suites back that up — the Rust SDK against an in-process server
+(`cargo test`), the JavaScript SDK against the container (`pnpm test` in `tests/`), and
+the AWS CLI itself (`tests/cli/smoke.sh`). On top of those,
+[`tests/s3-tests/run.sh`](tests/s3-tests/run.sh) runs the
+[ceph/s3-tests](https://github.com/ceph/s3-tests) compatibility suite and compares the
+result against a known-failures list that is only allowed to shrink. Commits are `feat:` or
 `fix:` and at most two sentences, one logical change per PR, and anything adding protocol
 surface comes with a conformance test driven through the real AWS SDK.
 

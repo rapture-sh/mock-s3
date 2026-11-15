@@ -96,10 +96,24 @@ time and binary size are features. A dependency needs to earn its place in the
 PR description — what it does, why the standard library or an existing dependency
 cannot, and what it costs in compile time.
 
-`tokio`, `axum`, `bytes`, `clap`, `chrono` and `tracing` are settled. Adding another
-async runtime or HTTP stack is not a PR, it is a discussion. The S3 XML is written by
-hand in `mock-s3-proto::xml` rather than through a serialisation crate, so the output
-matches S3 exactly; adding an XML serialiser needs a reason beyond tidiness.
+`tokio`, `axum`, `bytes`, `clap`, `chrono`, `quick-xml` and `tracing` are settled. Adding
+another async runtime or HTTP stack is not a PR, it is a discussion.
+
+`quick-xml` reads only. Response XML is written by hand in `mock-s3-proto::xml` so the
+shapes match S3 exactly, and that is the one module allowed to produce it; swapping in a
+serialiser needs a reason beyond tidiness.
+
+## Measuring compatibility
+
+`tests/s3-tests/run.sh` runs the [ceph/s3-tests](https://github.com/ceph/s3-tests) suite
+against mock-s3 and compares the result with `known-failures.txt`. It is the only
+outside measure of how compatible this actually is, and the list only ever shrinks — a
+failure that is not in it fails the run.
+
+Expect a long list. The suite assumes real S3 with several accounts, and mock-s3
+deliberately has no account model, versioning, lifecycle or policy enforcement, so every
+test covering those is expected to fail. Moving one line out of that file is a better
+contribution than most features.
 
 ## Checks
 

@@ -120,10 +120,7 @@ pub fn evaluate(
         rule.allowed_origins
             .iter()
             .any(|pattern| origin_matches(pattern, origin))
-            && rule
-                .allowed_methods
-                .iter()
-                .any(|allowed| *allowed == method)
+            && rule.allowed_methods.contains(&method)
             && wanted.iter().all(|header| header_allowed(rule, header))
     })?;
 

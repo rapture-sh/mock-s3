@@ -1,0 +1,21 @@
+# The ceph/s3-tests compatibility suite. Opt-in; driven by tests/s3-tests/run.sh.
+#
+#   tests/s3-tests/run.sh
+#
+# Separate from docker-compose.test.yml because this one is slow, needs the network to
+# build, and is a measurement rather than a gate.
+
+services:
+  mock-s3:
+    build: .
+    image: ghcr.io/rapture-sh/mock-s3:dev
+    command: ["--in-memory"]
+    expose:
+      - "9000"
+      - "9001"
+
+  s3-tests:
+    build:
+      context: ./tests/s3-tests
+    depends_on:
+      - mock-s3
