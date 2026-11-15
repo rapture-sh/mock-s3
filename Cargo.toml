@@ -1,0 +1,38 @@
+[workspace]
+members = ["crates/*", "xtask"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.100"
+license = "MIT"
+repository = "https://github.com/rapture-sh/mock-s3"
+
+[workspace.dependencies]
+mock-s3-core = { path = "crates/mock-s3-core" }
+mock-s3-proto = { path = "crates/mock-s3-proto" }
+mock-s3-console = { path = "crates/mock-s3-console" }
+
+anyhow = "1.0.95"
+async-trait = "0.1.85"
+axum = "0.7.9"
+bytes = "1.9.0"
+chrono = { version = "0.4.39", default-features = false, features = ["std", "clock", "serde"] }
+clap = { version = "4.5.26", features = ["derive", "env"] }
+dashmap = "6.1.0"
+hex = "0.4.3"
+http = "1.2.0"
+md-5 = "0.10.6"
+percent-encoding = "2.3.1"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.135"
+thiserror = "2.0.11"
+tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros", "fs", "io-util", "net", "signal"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
