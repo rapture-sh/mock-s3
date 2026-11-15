@@ -105,12 +105,20 @@ pub struct ListingEcho<'a> {
     pub v2: bool,
 }
 
-/// Everything outside the unreserved set, which is how S3 encodes a key.
+/// How S3 encodes a key for `encoding-type=url`: everything outside the unreserved set,
+/// **except the path separator**.
+///
+/// `/` is left alone. It is structural in a key — the thing `delimiter` groups on — and
+/// S3 preserves it, so `photos/a b.jpg` comes back as `photos/a%20b.jpg`. Encoding it as
+/// `%2F` breaks clients in a way that is easy to miss: botocore decodes the nested `Key`
+/// elements, so keys look right, but it does not decode the top-level `Prefix`, which
+/// then comes back as `foo%2F` where the caller sent `foo/`.
 const URL_ENCODE_SET: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
     .remove(b'-')
     .remove(b'_')
     .remove(b'.')
-    .remove(b'~');
+    .remove(b'~')
+    .remove(b'/');
 
 fn wants_url_encoding(encoding_type: Option<&str>) -> bool {
     encoding_type.is_some_and(|value| value.eq_ignore_ascii_case("url"))
@@ -632,8 +640,43 @@ mod tests {
 
             let body = list_bucket_result(&echo, &result);
 
-            assert!(body.contains("<Delimiter>%2F</Delimiter>"));
-            assert!(body.contains("<Prefix>a%20b%2F</Prefix>"));
+            // The separator survives encoding; the space does not.
+            assert!(body.contains("<Delimiter>/</Delimiter>"));
+            assert!(body.contains("<Prefix>a%20b/</Prefix>"));
+        }
+
+        /// The echoed `Prefix` has to come back as the caller sent it. botocore does not
+        /// decode this element, so encoding the separator here is visible to every
+        /// client that lists with a prefix.
+        #[test]
+        fn should_echo_a_prefix_unchanged_when_it_is_only_a_path() {
+            let mut echo = echo("b");
+            echo.encoding_type = Some("url");
+            echo.prefix = "foo/";
+
+            let body = list_bucket_result(&echo, &ListResult::default());
+
+            assert!(body.contains("<Prefix>foo/</Prefix>"), "{body}");
+        }
+
+        #[test]
+        fn should_still_encode_characters_that_are_ambiguous_in_a_url() {
+            let mut echo = echo("b");
+            echo.encoding_type = Some("url");
+            let result = ListResult {
+                objects: vec![object("photos/a+b c%d.jpg")],
+                key_count: 1,
+                ..Default::default()
+            };
+
+            let body = list_bucket_result(&echo, &result);
+
+            // `+` would otherwise be read as a space, and a bare `%` is an invalid
+            // escape — those are the reasons encoding-type exists.
+            assert!(
+                body.contains("<Key>photos/a%2Bb%20c%25d.jpg</Key>"),
+                "{body}"
+            );
         }
 
         #[test]

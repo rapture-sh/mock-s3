@@ -409,6 +409,27 @@ mod listing {
         assert_eq!(seen, vec!["a+1", "a+2", "a+3"]);
     }
 
+    /// A nested key keeps its separators under `encoding-type=url`, and so does the
+    /// echoed prefix. S3 does not encode `/`, and a client that lists with a prefix sees
+    /// that element without decoding it.
+    #[tokio::test]
+    async fn should_keep_path_separators_when_url_encoding_is_requested() {
+        let h = harness_with_keys(&["photos/2024/a b.jpg"]).await;
+
+        let listed =
+            h.s3.list_objects_v2()
+                .bucket("my-bucket")
+                .prefix("photos/")
+                .encoding_type(aws_sdk_s3::types::EncodingType::Url)
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(listed.prefix(), Some("photos/"));
+        let keys: Vec<&str> = listed.contents().iter().filter_map(|o| o.key()).collect();
+        assert_eq!(keys, vec!["photos/2024/a%20b.jpg"]);
+    }
+
     #[tokio::test]
     async fn should_round_trip_keys_when_url_encoding_is_requested() {
         let h = harness_with_keys(&["a b+c.txt", "100%.txt"]).await;
