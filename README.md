@@ -261,7 +261,8 @@ allowed instead, because there is nothing here to refuse it with.
 
 [`tests/s3-tests/known-failures.txt`](tests/s3-tests/known-failures.txt) is the exact
 score against [ceph/s3-tests](https://github.com/ceph/s3-tests), grouped by the reason
-each test fails. It is the honest answer to "will this work for me".
+each test fails. It is the honest answer to "will this work for me". If the answer turns
+out to be no, see [Other options](#other-options) before working around it.
 
 Working today alongside the operations: user metadata round-tripping through
 `x-amz-meta-*`, content type preservation, MD5 ETags, `encoding-type=url` listings,
@@ -275,6 +276,32 @@ alongside your bytes and the ETag silently stops matching.
 Out of scope: IAM and real signature verification, replication, lifecycle transitions,
 storage classes beyond `STANDARD`, and anything whose only honest implementation is
 "wait several hours".
+
+
+Other options
+-------------
+
+[adobe/S3Mock](https://github.com/adobe/S3Mock) is the mature one, and for a lot of
+projects it is the better answer. It covers more of the API than this does, it has years
+of use behind it, and on the JVM it plugs straight into a test run as a Testcontainers
+component, a JUnit Jupiter extension or a TestNG listener, which is a nicer integration
+than pointing a client at a container. If you need coverage or you are testing a JVM
+application, start there.
+
+It runs on the JVM, and that is the part that did not suit us. A JVM image and a Spring
+Boot startup are a lot to carry when every test file wants a clean instance, and the cost
+shows up on every run rather than once. mock-s3 is a static binary instead, which is
+most of why it exists.
+
+The other difference is the console. S3Mock ships no UI, so seeing what your code wrote
+means listing the bucket from a client or digging through the volume. mock-s3 serves a
+dashboard on its second port: buckets and their sizes, objects as folders, a click to
+preview an image or a JSON file, and a live log of the requests your SDK actually sent.
+When a test uploads the wrong thing to the wrong key, that is usually faster than
+reaching for the CLI.
+
+So: S3Mock if you want maturity and breadth, especially on the JVM. mock-s3 if you want
+something small that starts instantly and lets you look at what happened.
 
 
 Building from source
