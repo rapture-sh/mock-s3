@@ -43,14 +43,13 @@ jobs:
 
       # Without this, every run recompiles the whole dependency tree.
       #
-      # It does nothing at the moment, and the warning it prints is not worth chasing.
-      # Blacksmith intercepts the Actions cache API transparently, and their service
-      # answers every call for this repository with
-      # `400 Default branch not found for repository`, so both the restore and the save
-      # fail. It is their end, not this file: the same error hits `actions/setup-node`
-      # in the console job. Nothing here changes it, and the job still finishes in under
-      # two minutes cold. If Blacksmith has not picked the repository up by the time
-      # anyone reads this, delete the step rather than debugging it.
+      # If it is warning `400 Default branch not found for repository`, the fix is not in
+      # this file. Blacksmith intercepts the Actions cache API transparently and resolves
+      # the repository through its GitHub App, so the app has to have been granted this
+      # repository; it is installed on the organisation for selected repositories only.
+      # Runners still schedule without it, because those come from an organisation-level
+      # scale set, which is why everything else looks fine. The same warning in the
+      # console job's `actions/setup-node` step has the same one cause.
       - uses: Swatinem/rust-cache@v2
 
       - run: cargo fmt --all --check
