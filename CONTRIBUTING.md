@@ -209,10 +209,9 @@ runner of that architecture, and publishes one multi-architecture index under fo
 `image: raptureoss/mock-s3` in a compose file would otherwise be running whatever landed
 an hour ago.
 
-Images go to Docker Hub as `raptureoss/mock-s3`, and are mirrored to
-`ghcr.io/rapture-sh/mock-s3`. The mirror is not redundancy: Docker Hub rate-limits
-anonymous pulls, and this is a tool a test suite pulls on every run, so a CI user who
-starts seeing `toomanyrequests` has somewhere to go.
+Images go to Docker Hub as `raptureoss/mock-s3`, and nowhere else. Docker Hub
+rate-limits anonymous pulls, so if CI users start reporting `toomanyrequests`, mirroring
+to a second registry is the fix — a dozen lines in the release workflow.
 
 ### What the workflow needs
 
@@ -227,13 +226,9 @@ Generate the token under Docker Hub → Account Settings → Personal access tok
 your account password, and not a token with delete permission — a release never deletes
 a tag. The token is shown once.
 
-GHCR needs no secret: the workflow uses the built-in `GITHUB_TOKEN` with `packages:
-write`.
-
-**The first GHCR push creates a private package.** An anonymous `docker pull` fails with
-an authentication error — which reads like a missing image — until it is made public:
-open it from the repository's Packages list, then Package settings, then change
-visibility. Once, ever.
+The Docker Hub repository has to exist and be public before the first release. A private
+repository fails an anonymous `docker pull` with an authentication error, which reads
+like a missing image rather than a permission problem.
 
 ### Building an image by hand
 

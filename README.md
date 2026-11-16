@@ -26,8 +26,7 @@ Running it
 ----------
 
 Images are published for `linux/amd64` and `linux/arm64`, so an Apple Silicon machine
-runs native code rather than emulation. Mirrored at `ghcr.io/rapture-sh/mock-s3` for
-anyone hitting Docker Hub's anonymous pull limit from CI.
+runs native code rather than emulation.
 
 ```bash
 docker run --rm -p 9000:9000 -p 9001:9001 -v mock-s3-data:/data raptureoss/mock-s3:latest

@@ -41,10 +41,10 @@ marker, never both.
 and the S3 API is unaffected. No S3 behaviour may ever depend on it being there.
 
 Published images go to Docker Hub as `raptureoss/mock-s3`, built for `linux/amd64` and
-`linux/arm64` so an Apple Silicon machine gets native code rather than emulation. They
-are mirrored to `ghcr.io/rapture-sh/mock-s3`, which is not redundancy: Docker Hub
-rate-limits anonymous pulls, and this is a tool a test suite pulls on every run, so a CI
-user who starts seeing `toomanyrequests` has somewhere to go.
+`linux/arm64` so an Apple Silicon machine gets native code rather than emulation. One
+registry, deliberately. Docker Hub rate-limits anonymous pulls, so if CI users start
+reporting `toomanyrequests`, a second registry is the answer — not a reason to add one
+before anyone has hit it.
 
 A release is a pushed tag — `git tag v1.1.0 && git push origin v1.1.0` — and nothing
 publishes from an ordinary push to `main`. `latest` tracks releases, not `main`. See
