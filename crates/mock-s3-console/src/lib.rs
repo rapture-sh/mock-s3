@@ -160,7 +160,7 @@ pub struct KeyQuery {
 #[derive(Deserialize)]
 pub struct ContentQuery {
     key: String,
-    /// Present at all — `?download=1`, `?download` — means save rather than render.
+    /// Present at all, `?download=1`, `?download`: means save rather than render.
     download: Option<String>,
 }
 
@@ -320,7 +320,7 @@ async fn bucket_detail(
 }
 
 /// Deleting a bucket that still holds objects fails, exactly as it does over S3. The
-/// console offers purge separately rather than quietly emptying it first — losing
+/// console offers purge separately rather than quietly emptying it first, losing
 /// fixtures to a misclick is worse than a second click.
 async fn delete_bucket(
     State(state): State<ConsoleState>,
@@ -444,7 +444,7 @@ async fn put_object(
 /// instead of rendering it.
 ///
 /// The content type is the one the object was stored with, and a client can store
-/// anything — so the response says `nosniff` and never `text/html`. Without that, an
+/// anything, so the response says `nosniff` and never `text/html`. Without that, an
 /// uploaded page would run as script on the console's own origin, where it could drive
 /// the admin API.
 async fn object_content(
@@ -513,7 +513,7 @@ async fn delete_object(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// `GET /_admin/requests` — what clients have actually been sending, newest first.
+/// `GET /_admin/requests`: what clients have actually been sending, newest first.
 async fn requests(
     State(state): State<ConsoleState>,
     Query(params): Query<RequestQuery>,

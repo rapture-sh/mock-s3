@@ -1,12 +1,12 @@
 # Contributing to mock-s3
 
-Thanks for being here. You do not need permission to start — open an issue if you want
+Thanks for being here. You do not need permission to start. Open an issue if you want
 to talk something through first. The operations that currently answer
 `501 NotImplemented`, listed in the README, are the most useful place to begin.
 
 ## The contract
 
-Read [AGENTS.md](AGENTS.md). It is the actual contract for this repo — layout, code
+Read [AGENTS.md](AGENTS.md). It is the actual contract for this repo: layout, code
 style, testing conventions, and the rules below in full. Everything here assumes it.
 
 Using an AI agent to help? Point it at `AGENTS.md` and the matching playbook in
@@ -20,8 +20,8 @@ One rule outranks everything else in this repo:
 > error code, same XML shape, same headers. A mock that is subtly wrong is worse
 > than no mock, because it makes broken code pass.
 
-When you genuinely cannot match S3 — because the honest implementation takes
-hours, or needs real IAM — say so in the README under "out of scope" rather than
+When you genuinely cannot match S3, because the honest implementation takes
+hours or needs real IAM, say so in the README under "out of scope" rather than
 inventing plausible-looking behaviour.
 
 The second rule is structural:
@@ -67,18 +67,18 @@ hot reload without touching Rust.
 
 ## Adding an operation
 
-Follow the shape of an existing one — `PutObject` is the reference.
+Follow the shape of an existing one; `PutObject` is the reference.
 
-1. **`crates/mock-s3-core/`** — the behaviour, as functions on the engine. Unit
+1. **`crates/mock-s3-core/`**: the behaviour, as functions on the engine. Unit
    tests next to the logic for the interesting state transitions and edge cases.
-2. **`crates/mock-s3-proto/src/xml/`** — request and response types. Match the
+2. **`crates/mock-s3-proto/src/xml/`**: request and response types. Match the
    real element names and nesting exactly, including the namespace.
-3. **`crates/mock-s3-proto/src/ops/`** — the handler. Parse, call the engine, map
+3. **`crates/mock-s3-proto/src/ops/`**: the handler. Parse, call the engine, map
    errors through `error.rs`. No business logic here.
-4. **`crates/mock-s3-proto/src/router.rs`** — wire up the route. Mind the
+4. **`crates/mock-s3-proto/src/router.rs`**: wire up the route. Mind the
    subresource query parameters (`?uploads`, `?versioning`); they are how S3
    distinguishes operations on the same path and method.
-5. **`crates/conformance/tests/`** — a test driving it through the real
+5. **`crates/conformance/tests/`**: a test driving it through the real
    `aws-sdk-s3` client. **This is required for anything that adds protocol
    surface.** Hand-written HTTP requests prove your handler matches your
    understanding; the real SDK proves it matches what users will send.
@@ -93,7 +93,7 @@ that retry logic cannot be tested against.
 
 Default answer is no, and it matters more here than in most projects: start-up
 time and binary size are features. A dependency needs to earn its place in the
-PR description — what it does, why the standard library or an existing dependency
+PR description, what it does, why the standard library or an existing dependency
 cannot, and what it costs in compile time.
 
 `tokio`, `axum`, `bytes`, `clap`, `chrono`, `quick-xml` and `tracing` are settled. Adding
@@ -107,7 +107,7 @@ serialiser needs a reason beyond tidiness.
 
 `tests/s3-tests/run.sh` runs the [ceph/s3-tests](https://github.com/ceph/s3-tests) suite
 against mock-s3 and compares the result with `known-failures.txt`. It is the only
-outside measure of how compatible this actually is, and the list only ever shrinks — a
+outside measure of how compatible this actually is, and the list only ever shrinks: a
 failure that is not in it fails the run.
 
 Expect a long list. The suite assumes real S3 with several accounts, and mock-s3
@@ -123,7 +123,7 @@ things follow:
   answer for one nobody has looked at. That section is the to-do list: shrink it by
   fixing the test or by adding a reason that is actually true. A reason invented to make
   the list look tidy is worse than no reason, because it stops anyone looking again.
-- A new reason is a line in `reasons`, most specific first — the first pattern to match a
+- A new reason is a line in `reasons`, most specific first; the first pattern to match a
   test id claims it.
 
 `--update` prints how many lines it removed and how many it added, and shouts about any
@@ -170,7 +170,7 @@ Branches: `feat/<short-name>` or `fix/<short-name>`, cut from `main`.
 
 - One logical change per PR.
 - Say what it does and why. For a fidelity fix, say what real S3 does and how you
-  know — a doc link or an observed response.
+  know, a doc link or an observed response.
 - Conformance test for new protocol surface; regression test for any bug fixed.
 - Note any new dependency and why it earned its place.
 - Benchmark numbers for anything claiming to be faster.
@@ -251,7 +251,7 @@ an hour ago.
 
 Images go to Docker Hub as `raptureoss/mock-s3`, and nowhere else. Docker Hub
 rate-limits anonymous pulls, so if CI users start reporting `toomanyrequests`, mirroring
-to a second registry is the fix — a dozen lines in the release workflow.
+to a second registry is the fix, a dozen lines in the release workflow.
 
 ### What the workflow needs
 
@@ -263,7 +263,7 @@ Two repository secrets, under Settings → Secrets and variables → Actions:
 | `DOCKERHUB_TOKEN` | a Docker Hub personal access token with **Read & Write** |
 
 Generate the token under Docker Hub → Account Settings → Personal access tokens. Not
-your account password, and not a token with delete permission — a release never deletes
+your account password, and not a token with delete permission: a release never deletes
 a tag. The token is shown once.
 
 The Docker Hub repository has to exist and be public before the first release. A private

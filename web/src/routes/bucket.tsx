@@ -118,9 +118,9 @@ export function BucketPage() {
       />
 
       <div className="mb-8 grid grid-cols-2 gap-6 border-border/60 border-y py-4 sm:grid-cols-4">
-        <Stat label="Objects" value={detail.data?.objects ?? "—"} />
-        <Stat label="Size" value={detail.data ? formatBytes(detail.data.bytes) : "—"} />
-        <Stat label="Versioning" value={detail.data?.versioning ?? "—"} />
+        <Stat label="Objects" value={detail.data?.objects ?? "-"} />
+        <Stat label="Size" value={detail.data ? formatBytes(detail.data.bytes) : "-"} />
+        <Stat label="Versioning" value={detail.data?.versioning ?? "-"} />
         <Stat
           label="Created"
           value={
@@ -129,7 +129,7 @@ export function BucketPage() {
                 {formatRelative(detail.data.created_at)}
               </span>
             ) : (
-              "—"
+              "-"
             )
           }
         />

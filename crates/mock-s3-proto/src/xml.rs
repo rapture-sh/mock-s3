@@ -104,14 +104,14 @@ pub struct ListingEcho<'a> {
     /// responses carry `Marker` instead.
     pub v2: bool,
     /// `fetch-owner=true`. A version 2 listing leaves `Owner` out unless it is asked
-    /// for — that is the point of the parameter — while version 1 always includes it.
+    /// for, that is the point of the parameter, while version 1 always includes it.
     pub fetch_owner: bool,
 }
 
 /// How S3 encodes a key for `encoding-type=url`: everything outside the unreserved set,
 /// **except the path separator**.
 ///
-/// `/` is left alone. It is structural in a key — the thing `delimiter` groups on — and
+/// `/` is left alone. It is structural in a key, the thing `delimiter` groups on, and
 /// S3 preserves it, so `photos/a b.jpg` comes back as `photos/a%20b.jpg`. Encoding it as
 /// `%2F` breaks clients in a way that is easy to miss: botocore decodes the nested `Key`
 /// elements, so keys look right, but it does not decode the top-level `Prefix`, which
@@ -271,7 +271,7 @@ pub struct VersionListingEcho<'request> {
 ///
 /// A bucket that was never versioned still answers here, with one `null` version per
 /// object. That is what real S3 does, and it is not cosmetic: clients use `?versions` to
-/// enumerate a bucket before deleting it — the ceph/s3-tests cleanup does — and an answer
+/// enumerate a bucket before deleting it, the ceph/s3-tests cleanup does, and an answer
 /// in the wrong document shape parses as *no objects*, so the caller deletes nothing and
 /// then cannot delete the bucket.
 pub fn list_versions_result(echo: &VersionListingEcho<'_>, result: &VersionListResult) -> String {
@@ -596,8 +596,8 @@ pub fn request_payment_configuration() -> String {
 /// `GetBucketVersioning`.
 ///
 /// A bucket that has never been configured answers with an empty document rather than
-/// `Status: Suspended`. The two are not the same thing to S3 — a suspended bucket still
-/// holds the versions it collected — and an SDK reports the empty one as `None`.
+/// `Status: Suspended`. The two are not the same thing to S3, a suspended bucket still
+/// holds the versions it collected, and an SDK reports the empty one as `None`.
 pub fn versioning_configuration(status: VersioningStatus) -> String {
     let mut out = format!("{DECLARATION}<VersioningConfiguration xmlns=\"{NAMESPACE}\">");
     if status.is_configured() {
@@ -686,8 +686,8 @@ mod tests {
             }
         }
 
-        /// A version 2 listing leaves `Owner` out unless `fetch-owner=true` — that is
-        /// what the parameter is for — while a version 1 listing always carries it.
+        /// A version 2 listing leaves `Owner` out unless `fetch-owner=true`: that is
+        /// what the parameter is for, while a version 1 listing always carries it.
         #[test]
         fn should_report_the_owner_only_when_the_listing_asked_for_it() {
             let result = ListResult {
@@ -783,7 +783,7 @@ mod tests {
             let body = list_bucket_result(&echo, &result);
 
             // `+` would otherwise be read as a space, and a bare `%` is an invalid
-            // escape — those are the reasons encoding-type exists.
+            // escape, those are the reasons encoding-type exists.
             assert!(
                 body.contains("<Key>photos/a%2Bb%20c%25d.jpg</Key>"),
                 "{body}"
@@ -890,7 +890,7 @@ mod tests {
     mod versioning_configuration {
         use super::*;
 
-        /// An SDK reads the empty document as `None`, which is not `Suspended` — a
+        /// An SDK reads the empty document as `None`, which is not `Suspended`: a
         /// suspended bucket still holds the versions it collected.
         #[test]
         fn should_omit_the_status_for_a_bucket_that_was_never_configured() {

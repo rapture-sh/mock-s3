@@ -15,11 +15,10 @@ buckets, upload files, and watch the requests your client is actually sending.
 > admin API, and makes no durability guarantee. Bind it to localhost or a container
 > network and keep it there. See [SECURITY.md](SECURITY.md).
 
-It started inside the [Kywi](https://github.com/rapture-sh) monorepo, standing in for S3
-across that test suite. Other projects needed the same thing, so it was extracted here,
-rebuilt around a standalone protocol engine and extended well past the original — many
-buckets per instance, multipart uploads, bucket versioning and a request log. Kywi now
-consumes it like everyone else.
+We used a mocked S3 internally for a long time and kept running into its limits, in
+local testing and in plenty of other places besides. mock-s3 is the replacement: a
+standalone protocol engine with many buckets per instance, multipart uploads, bucket
+versioning and a request log.
 
 
 Running it
@@ -35,7 +34,7 @@ docker run --rm -p 9000:9000 -p 9001:9001 -v mock-s3-data:/data raptureoss/mock-
 S3 API on `:9000`, admin API and console on `:9001`. Objects live in the volume mounted
 at `/data`, so they survive a container restart and you can inspect them from the host.
 
-The second port is optional — `--no-console` drops it without touching the S3 API. It
+The second port is optional: `--no-console` drops it without touching the S3 API. It
 serves the console and the JSON admin API the console reads, so anything the console can
 do is scriptable with `curl` against `/_admin`.
 
@@ -65,7 +64,7 @@ Pointing a client at it
 
 mock-s3 serves **path-style** addressing (`http://host:9000/bucket/key`), because
 virtual-hosted style needs wildcard DNS. Every SDK has a switch for it. Any access key
-works — signatures identify the caller but are never verified.
+works. Signatures identify the caller but are never verified.
 
 ```ts
 const s3 = new S3Client({
@@ -115,8 +114,8 @@ So `photos/2024/cat.jpg` in bucket `assets` is the file
 `/data/buckets/assets/objects/photos/2024/cat.jpg`. Open the volume and you are looking
 at your test fixtures as files.
 
-A payload dropped into `objects/` without a sidecar is still served — size, modification
-time and content type are worked out from the file itself — so a volume can be
+A payload dropped into `objects/` without a sidecar is still served (size, modification
+time and content type are worked out from the file itself), so a volume can be
 pre-seeded with assets before anything starts.
 
 Versioning adds to that rather than changing it. `objects/<key>` stays where it is and
@@ -147,7 +146,7 @@ absolute paths and drive prefixes, so no key can write outside the volume.
 Architecture
 ------------
 
-One instance, one endpoint, many buckets — the shape S3 itself has. Running a container
+One instance, one endpoint, many buckets, which is the shape S3 itself has. Running a container
 per bucket would be like running a database server per table.
 
 ```
@@ -161,7 +160,7 @@ Two listeners share one engine. They are separate **ports** rather than paths be
 path-style addressing the URL root *is* the bucket namespace: a console at `/console`
 would make a bucket named `console` unreachable.
 
-**Everything is scoped to a bucket** — objects, fault rules, statistics, configuration.
+**Everything is scoped to a bucket**: objects, fault rules, statistics, configuration.
 No global switches. That is what makes one shared instance safe for a parallel test
 suite: a test making one bucket return `503` cannot affect a test using another. Give
 each test its own bucket and they will not see each other.
@@ -177,8 +176,8 @@ Two things make it pleasant in a suite. `POST /_admin/reset` wipes everything, o
    "request_id": "000000000000007B" }]
 ```
 
-That answers the question a mock gets asked most: an SDK makes calls you never wrote — a
-`GetBucketLocation` before a listing, a switch to multipart above a threshold — and this
+That answers the question a mock gets asked most. An SDK makes calls you never wrote (a
+`GetBucketLocation` before a listing, a switch to multipart above a threshold), and this
 is how you see them.
 
 Rust users can skip the container and use `mock-s3-testkit` to spawn an instance
@@ -207,18 +206,18 @@ Supported operations
 
 Multipart matters more than its place in that list suggests: SDKs switch to it on their
 own above roughly 8 MB, so a caller who never mentions multipart still depends on it. A
-multipart object reports the ETag S3 reports — a digest over the parts' digests with a
+multipart object reports the ETag S3 reports, a digest over the parts' digests with a
 `-N` suffix, not the MD5 of the assembled bytes.
 
-The bucket settings clients probe on connect — lifecycle, policy, tagging, encryption,
-website, replication, object lock, notification, logging, accelerate — answer the way
+The bucket settings clients probe on connect (lifecycle, policy, tagging, encryption,
+website, replication, object lock, notification, logging, accelerate) answer the way
 real S3 does when nothing is configured, with the specific "not configured" error or an
 empty document. mock-s3 stores none of those: a `PUT` of one is accepted and ignored,
 because pretending to enforce a lifecycle rule would be worse than refusing.
 
 **CORS is the exception, and is stored for real**, because a browser cannot talk to the
-server at all without it. Rules are evaluated on preflight — origin, method and
-requested headers, including `https://*.example.com` wildcards — and the
+server at all without it. Rules are evaluated on preflight (origin, method and
+requested headers, including `https://*.example.com` wildcards), and the
 `Access-Control-*` headers go on ordinary responses too, which is the half that is easy
 to miss. With no configuration stored, a preflight is refused, exactly as S3 refuses it;
 a mock that allowed everything would let a web app pass here and fail against AWS.
@@ -228,7 +227,7 @@ a paginated `?versions` listing. Enabling it on a bucket that already holds obje
 changes nothing on disk: those objects become the `null` version, which is what real S3
 calls them too. A delete then leaves a marker rather than removing anything, so the key
 reads as a `404` carrying `x-amz-delete-marker` while its earlier versions stay readable
-by id — and deleting the marker puts the object back.
+by id, and deleting the marker puts the object back.
 
 Two divergences worth knowing:
 
@@ -243,13 +242,13 @@ Two divergences worth knowing:
 **Not implemented**, and worth reading before you point a test suite at this:
 
 - **No ACL, policy or signature enforcement.** Any credentials are accepted. A test that
-  asserts a request is *refused* will not get what it expects — that is rule 7, not an
+  asserts a request is *refused* will not get what it expects. That is rule 7, not an
   oversight.
 - **No encryption.** `SSE-C` and `SSE-KMS` are absent by design; see `SECURITY.md`.
 - **Conditional *writes*.** `If-Match` and `If-None-Match` work on `GET` and `HEAD`; on
   `PUT`, copy and delete they are not evaluated, so there is no atomic create yet.
 - **Object lock, retention and legal hold**, **bucket logging**, **lifecycle
-  expiration**, and **object tagging stored for real** — the settings above are accepted
+  expiration**, and **object tagging stored for real**: the settings above are accepted
   and ignored, so nothing acts on them.
 - **Browser form POST uploads**, `UploadPartCopy`, `GetObjectAttributes`, `S3 Select`,
   `partNumber` on `GET`, `ListBuckets` pagination, `Expect: 100-continue`, MFA delete,
@@ -270,7 +269,7 @@ Working today alongside the operations: user metadata round-tripping through
 rules so an invalid name fails here instead of passing locally and failing against AWS.
 
 Streaming-signed uploads (`Content-Encoding: aws-chunked`) are decoded, which is what
-the AWS CLI's high-level commands use — without it `aws s3 cp` stores the chunk framing
+the AWS CLI's high-level commands use. Without it, `aws s3 cp` stores the chunk framing
 alongside your bytes and the ETag silently stops matching.
 
 Out of scope: IAM and real signature verification, replication, lifecycle transitions,
@@ -292,7 +291,7 @@ cargo run
 cargo xtask dist
 ```
 
-`cargo run` is enough for server work — debug builds read console assets from `web/dist`
+`cargo run` is enough for server work: debug builds read console assets from `web/dist`
 at runtime, so the server starts whether or not you have built the frontend. `xtask dist`
 sequences the frontend build and the release build, which embeds the assets; use it
 rather than `cargo build --release` on its own. For console work, `pnpm dev` in `web/`
@@ -310,7 +309,7 @@ the most useful place to begin.
 Read [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) first. The rule that
 outranks the rest: match real S3, or document the divergence.
 
-Three suites back that up — the Rust SDK against an in-process server
+Three suites back that up: the Rust SDK against an in-process server
 (`cargo test`), the JavaScript SDK against the container (`pnpm test` in `tests/`), and
 the AWS CLI itself (`tests/cli/smoke.sh`). On top of those,
 [`tests/s3-tests/run.sh`](tests/s3-tests/run.sh) runs the

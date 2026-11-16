@@ -5,7 +5,7 @@
 //! allows the origin, so a mock that ignores CORS is unusable from a browser however
 //! well it serves everything else.
 //!
-//! Rules are stored as the client sent them and parsed on read — see
+//! Rules are stored as the client sent them and parsed on read, see
 //! `mock_s3_core::bucket_config`.
 
 use http::StatusCode;
@@ -129,8 +129,8 @@ pub fn evaluate(
 
     Some(Allowance {
         // A rule of `*` is echoed as `*`, and any other pattern is echoed as the concrete
-        // origin it matched. Echoing the origin for `*` as well would look more useful —
-        // it is what a request carrying credentials needs — but S3 returns the wildcard,
+        // origin it matched. Echoing the origin for `*` as well would look more useful,
+        // it is what a request carrying credentials needs, but S3 returns the wildcard,
         // and a browser that caches `*` behaves differently from one that caches an
         // origin. Matching S3 is the whole point.
         origin: if matched == "*" {
@@ -261,7 +261,7 @@ mod tests {
 
         /// A rule of `*` is echoed as `*`, not as the origin that matched it. Echoing
         /// the origin would be more useful to a credentialed request, and S3 does not do
-        /// it — a browser caches the two differently.
+        /// it, a browser caches the two differently.
         #[test]
         fn should_echo_the_wildcard_rather_than_the_origin_for_a_wildcard_rule() {
             let rules = vec![rule(&["*"], &["GET"], &[])];

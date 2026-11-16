@@ -14,7 +14,7 @@ it. Expect an acknowledgement within a few days.
 
 mock-s3 is a **testing tool with no security model**. It accepts any credentials,
 does not verify signatures, and exposes an unauthenticated admin API that can
-wipe all state. That is by design — it exists so test suites do not need real
+wipe all state. That is by design: it exists so test suites do not need real
 credentials.
 
 **mock-s3 is not a deployment target.** It belongs on a developer machine or in
@@ -48,7 +48,7 @@ or that turns a test fixture into a foothold on the developer's machine:
   metadata are attacker-controlled strings rendered in a web page.
 - **Remote code execution or memory unsafety** in request parsing, including
   anything reachable through `unsafe` or a dependency.
-- **Unbounded resource consumption** from a single small request — a request that
+- **Unbounded resource consumption** from a single small request, a request that
   makes the process allocate without limit or spin forever. Uploading a large
   object and filling the volume is working as intended; a small request that does
   it is not.

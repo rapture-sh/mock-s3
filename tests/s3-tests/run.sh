@@ -30,7 +30,7 @@ compose=(docker compose -f "$root/docker-compose.s3tests.yml")
 # what lets `--update` regenerate the file without throwing the reasons away.
 #
 # A failure that matches nothing lands under "not yet triaged", which is the honest
-# answer for one nobody has looked at — never a reason invented to make the list tidy.
+# answer for one nobody has looked at, never a reason invented to make the list tidy.
 # Shrinking that section, by fixing a test or by giving it a reason, is the work.
 reasons=(
   "object lock, retention and legal hold are not implemented@@object_lock|retention|legal_hold|governance|compliance"
@@ -124,11 +124,11 @@ echo "==> starting mock-s3"
 echo "==> running ${pytest_args[*]}"
 output="$(mktemp)"
 # pytest exits non-zero whenever anything failed, which is the normal case here, so its
-# status is not the signal — the comparison below is.
+# status is not the signal, the comparison below is.
 "${compose[@]}" run --rm s3-tests -q --tb=no -rfE "${pytest_args[@]}" \
   | tee "$output" || true
 
-# A run that died — killed, out of memory, the server never came up — prints no summary
+# A run that died, killed, out of memory, the server never came up, prints no summary
 # at all, and every check below reads that as "nothing failed". In `--update` that writes
 # an empty known-failures.txt, and without it the script reports no regressions and exits
 # 0. Both turn a broken run into a perfect score, so refuse before reading the results.
@@ -162,7 +162,7 @@ if [ -n "$now_passing" ]; then
 fi
 
 # Reported before the rewrite, not instead of it. A reseed that absorbs a regression
-# without saying so would quietly raise the bar it is supposed to be lowering — and the
+# without saying so would quietly raise the bar it is supposed to be lowering, and the
 # count below is what makes it visible in review even when the diff is long.
 if [ -n "$new_failures" ]; then
   printf '\n==> REGRESSION: these failed and are not in known-failures.txt:\n%s\n' \

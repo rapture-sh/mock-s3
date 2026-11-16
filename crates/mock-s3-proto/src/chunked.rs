@@ -15,7 +15,7 @@
 //! match. That failure looks like corruption rather than a missing feature, which is
 //! what makes it worth a module of its own.
 //!
-//! Signatures are parsed off and discarded — mock-s3 never verifies them — and the
+//! Signatures are parsed off and discarded, mock-s3 never verifies them, and the
 //! unsigned variant, whose chunk header is a bare hex size, is accepted too.
 
 use bytes::Bytes;
@@ -47,8 +47,8 @@ pub fn is_chunked(headers: &HeaderMap) -> bool {
         });
 
     // `Content-Encoding: aws-chunked` on its own does not mean the body is framed. A
-    // client may declare it as an ordinary encoding — S3 accepts that and stores the
-    // object — and treating it as framing then fails the upload with
+    // client may declare it as an ordinary encoding, S3 accepts that and stores the
+    // object, and treating it as framing then fails the upload with
     // `MissingContentLength` for a request that was never chunked. The decoded length is
     // what an actually-framed request always carries, so it is the thing to key on.
     let decoded_length = headers.contains_key(DECODED_LENGTH);

@@ -10,7 +10,7 @@ engine logic in `mock-s3-core` with `#[cfg(test)]` unit tests, XML types, the ha
 the route, any new error codes, then a conformance test in `crates/conformance/tests/`
 driven through the real `aws-sdk-s3` client, then the operations table in `README.md`.
 
-Confirm the real behaviour against the AWS API reference before writing the handler —
+Confirm the real behaviour against the AWS API reference before writing the handler,
 status codes and error codes are not to be guessed. If the reference is ambiguous, stop
 and tell me rather than picking something plausible.
 

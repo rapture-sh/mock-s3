@@ -1,7 +1,7 @@
 # The mock-s3 console
 
 A viewer over the JSON admin API on `:9001`. It holds no logic the server could hold
-instead, and no S3 behaviour depends on it running — `--no-console` drops it entirely.
+instead, and no S3 behaviour depends on it running: `--no-console` drops it entirely.
 
 ```bash
 pnpm install
@@ -38,13 +38,13 @@ four of them, and a generated route tree would add a build step and a committed 
 to keep in sync for no gain at this size.
 
 `src/vendor/shadcn-tailwind.css` is copied from the `shadcn` package rather than
-imported from it. The CLI is not a dependency of this app — it drags in `dotenvx` and
+imported from it. The CLI is not a dependency of this app: it drags in `dotenvx` and
 `systeminformation`, which have no business in a container image that only compiles CSS.
 Run it with `pnpm dlx shadcn` and refresh the vendored file when its base layer
 moves.
 
 `src/components/ui` is written by the shadcn CLI and re-written by it, so Biome formats
-it but does not lint it — `biome.json` turns off the one a11y rule that fires on a
+it but does not lint it: `biome.json` turns off the one a11y rule that fires on a
 primitive which has no control of its own to label.
 
 ## Conventions
@@ -68,8 +68,8 @@ Everything in the repository's `AGENTS.md` applies. For this directory in partic
 Dark only, and monochrome. `index.html` sets `class="dark"` and nothing removes it:
 there is no theme provider and no toggle, so no component has to think about two
 palettes. The colours are the shadcn neutral scale, which has zero chroma, and no accent
-was added. The only colour on screen is an HTTP status that has gone wrong — amber for a
-4xx, red for a 5xx — so one bad request stands out in a wall of good ones.
+was added. The only colour on screen is an HTTP status that has gone wrong: amber for a
+4xx, red for a 5xx. One bad request stands out in a wall of good ones.
 
 Inter for text, JetBrains Mono for machine strings: keys, paths, ETags, request ids.
 Monospace as a label font is decoration; monospace where character alignment is the point

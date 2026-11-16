@@ -9,7 +9,7 @@ name: Release
 # is running whatever landed on main an hour ago.
 #
 # Each architecture builds on a machine of that architecture, via Blacksmith. The
-# alternative is QEMU, which emulates an ARM CPU to run rustc — for a release build with
+# alternative is QEMU, which emulates an ARM CPU to run rustc. For a release build with
 # fat LTO that turns a few minutes into the better part of an hour.
 #
 # The blacksmith-* labels need the Blacksmith GitHub App installed on the repository. A
@@ -48,7 +48,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Each build pushes a nameless image identified only by its digest. The tags are
-      # attached once, in the merge job, to the index that covers both architectures —
+      # attached once, in the merge job, to the index that covers both architectures,
       # so there is never a moment where `latest` means one architecture.
       - name: Build and push by digest
         id: build
@@ -59,7 +59,7 @@ jobs:
           outputs: type=image,name=${{ env.DOCKERHUB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           # No cache, deliberately. A shared cache is a way for a poisoned entry to put
           # content into a published image, and the native build is a couple of minutes
-          # anyway — the wrong trade to make on the one artifact people actually run.
+          # anyway: the wrong trade to make on the one artifact people actually run.
           no-cache: true
 
       # Run the image before anything is tagged. The publish job needs this one, so a

@@ -15,5 +15,5 @@ directory.
 
 Fix anything mechanical (formatting, import order, an obvious clippy suggestion)
 yourself; `cargo fmt --all` handles the first category. For real failures, explain the
-cause before changing behaviour — and if a conformance test fails, assume mock-s3 is
+cause before changing behaviour, and if a conformance test fails, assume mock-s3 is
 wrong about S3 before assuming the test is.

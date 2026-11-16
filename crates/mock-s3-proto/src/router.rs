@@ -73,7 +73,7 @@ pub fn router(engine: Arc<Engine>, config: ProtoConfig) -> Router {
         // go: an object storage server that cannot take a 3 MB file is not one.
         //
         // That does mean a large upload is held in memory. For a mock bound to localhost
-        // that is the intended trade — see SECURITY.md.
+        // that is the intended trade, see SECURITY.md.
         .layer(axum::extract::DefaultBodyLimit::disable())
         .with_state(engine);
 
@@ -97,7 +97,7 @@ pub fn router(engine: Arc<Engine>, config: ProtoConfig) -> Router {
             async move { rewrite_virtual_host(request, next, config).await }
         }))
         // Outermost, so it records the request as the client sent it and the response
-        // as the client will see it — which is the question this log exists to answer.
+        // as the client will see it, which is the question this log exists to answer.
         .layer(axum::middleware::from_fn(move |request, next| {
             let log = log.clone();
             async move { observe(request, next, log).await }
@@ -266,7 +266,7 @@ fn bucket_from_host(host: &str, base_domain: &str) -> Option<String> {
 
 /// Give every response a request id, the way S3 does.
 ///
-/// An error response has already set one — it has to match the id inside the XML body —
+/// An error response has already set one, it has to match the id inside the XML body,
 /// so this only fills in the gap for successful responses.
 async fn attach_request_id(request: Request, next: Next) -> Response {
     let mut response = next.run(request).await;
@@ -287,7 +287,7 @@ async fn attach_request_id(request: Request, next: Next) -> Response {
 /// The AWS SDKs address a bucket in path-style as `PUT /my-bucket/`, with a trailing
 /// slash, which does not match a one-segment route. Only the single-segment case is
 /// rewritten: a deeper path keeps its trailing slash, because a key is allowed to end in
-/// `/` — that is exactly how a folder marker is stored.
+/// `/`: that is exactly how a folder marker is stored.
 async fn normalize_bucket_path(mut request: Request, next: Next) -> Response {
     let path = request.uri().path();
 

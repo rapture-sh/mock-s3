@@ -34,7 +34,7 @@ why a new listing path must keep that filter.
 Versioning in particular is built to be additive: `objects/<key>` is the `null` version,
 which is what S3 calls an object stored before versioning was enabled, so turning it on
 changes nothing already on disk. `core::versioning` documents the layout and the one
-invariant it rests on — a key has at most one null entry, the object or a null delete
+invariant it rests on: a key has at most one null entry, either the object or a null delete
 marker, never both.
 
 **The console is optional.** It is a viewer and nothing more: `--no-console` turns it off
@@ -43,10 +43,10 @@ and the S3 API is unaffected. No S3 behaviour may ever depend on it being there.
 Published images go to Docker Hub as `raptureoss/mock-s3`, built for `linux/amd64` and
 `linux/arm64` so an Apple Silicon machine gets native code rather than emulation. One
 registry, deliberately. Docker Hub rate-limits anonymous pulls, so if CI users start
-reporting `toomanyrequests`, a second registry is the answer — not a reason to add one
+reporting `toomanyrequests`, a second registry is the answer, not a reason to add one
 before anyone has hit it.
 
-A release is a pushed tag — `git tag v1.1.0 && git push origin v1.1.0` — and nothing
+A release is a pushed tag (`git tag v1.1.0 && git push origin v1.1.0`), and nothing
 publishes from an ordinary push to `main`. `latest` tracks releases, not `main`. See
 `CONTRIBUTING.md`.
 
@@ -54,8 +54,8 @@ publishes from an ordinary push to `main`. `latest` tracks releases, not `main`.
 
 1. **Match real S3, or document the divergence.** Same status code, same error code,
    same XML shape, same headers. A mock that is subtly wrong is worse than no mock,
-   because it makes broken code pass. When matching S3 is genuinely impossible — real
-   IAM, replication, multi-hour lifecycle transitions — list it as out of scope in the
+   because it makes broken code pass. When matching S3 is genuinely impossible (real
+   IAM, replication, multi-hour lifecycle transitions), list it as out of scope in the
    README rather than inventing plausible-looking behaviour.
 2. **`mock-s3-core` knows nothing about HTTP or XML.** No `axum`, no `hyper`, no
    `quick-xml` in its dependencies. It owns storage, listings, multipart state and fault
@@ -169,13 +169,13 @@ Two consequences, both deliberate and both documented in the README: a key canno
 hold data and act as a directory for other keys, and a key with an empty path segment
 cannot be stored. Both are refused rather than silently mangled. A payload with no
 sidecar is still served, with its metadata synthesised from the file, which is what makes
-seeding a volume work — do not break that.
+seeding a volume work. Do not break that.
 
 Where things go:
 
 - `mock-s3-core` is the engine: input in, result out, with storage behind the `Store`
   trait. No sockets, no XML, no `axum` types. Most unit test coverage lives here, next to the
-  code, because this is where the genuinely tricky parts are — `ListObjectsV2`
+  code, because this is where the genuinely tricky parts are: `ListObjectsV2`
   pagination with prefix, delimiter and continuation tokens, and the multipart state
   machine.
 - `mock-s3-proto` is the only crate that knows S3 is XML over HTTP. Handlers parse,
@@ -196,22 +196,22 @@ mounted at `/console` would make a bucket named `console` unreachable.
 
 ## Adding an operation
 
-1. **`mock-s3-core`** — the behaviour, as methods on the engine, with unit tests beside
+1. **`mock-s3-core`**: the behaviour, as methods on the engine, with unit tests beside
    them in a `#[cfg(test)]` module. Invalid input returns a typed error variant, never a
    panic and never a string.
-2. **`mock-s3-proto/src/xml/`** — request and response types. Match the real element
+2. **`mock-s3-proto/src/xml/`**: request and response types. Match the real element
    names, nesting and namespace exactly. Getting this wrong is the single most common
    way a mock diverges without anyone noticing.
-3. **`mock-s3-proto/src/ops/`** — the handler: parse the request, call the engine, map
+3. **`mock-s3-proto/src/ops/`**: the handler: parse the request, call the engine, map
    the error. Thin.
-4. **`mock-s3-proto/src/router.rs`** — wire up the route. Mind the subresource query
+4. **`mock-s3-proto/src/router.rs`**: wire up the route. Mind the subresource query
    parameters (`?uploads`, `?versioning`, `?delete`); they are how S3 distinguishes
    different operations on the same path and method.
-5. **`mock-s3-proto/src/error.rs`** — add any new error code with its status. The
+5. **`mock-s3-proto/src/error.rs`**: add any new error code with its status. The
    [S3 error responses reference](https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html)
    is the source of truth. Guessing produces a mock that retry logic cannot be tested
    against.
-6. **`crates/conformance/tests/`** — a test driving the operation through the real
+6. **`crates/conformance/tests/`**: a test driving the operation through the real
    `aws-sdk-s3` client. **Required for anything that adds protocol surface.**
    Hand-written HTTP proves the handler matches your understanding; the real SDK proves
    it matches what users actually send.
@@ -225,20 +225,20 @@ Reuse these rather than building another one. They are what keeps every operatio
 behaving like the same server. They land with the first operations; if one is missing
 when you need it, build it there rather than inline in a handler.
 
-- `core::listing` — prefix, delimiter, `max-keys` and continuation tokens. Every listing
+- `core::listing`: prefix, delimiter, `max-keys` and continuation tokens. Every listing
   operation goes through it. Do not reimplement pagination in a handler.
-- `core::store::Store` — the storage trait. Disk is the default and `--in-memory` is the
+- `core::store::Store`: the storage trait. Disk is the default and `--in-memory` is the
   opt-out, so every operation has to work on both. New storage behaviour is a method
   here, not a branch on the backend type. Key-to-path resolution lives here too, and is
   the only place allowed to turn an object key into a filesystem path.
-- `core::fault` — not built yet. Fault rules will be consulted once per request, early,
+- `core::fault`: not built yet. Fault rules will be consulted once per request, early,
   before any work. An operation that does not check them cannot be tested for retry
   behaviour.
-- `proto::error` — the one place engine errors become S3 error codes. A handler never
+- `proto::error`: the one place engine errors become S3 error codes. A handler never
   writes an error body itself.
-- `proto::xml` — the serialisation types. S3 responses are not ad-hoc strings; never
+- `proto::xml`: the serialisation types. S3 responses are not ad-hoc strings; never
   format XML by hand in a handler.
-- `testkit` — not built yet. It will spawn an in-process instance on a random port, so
+- `testkit`: not built yet. It will spawn an in-process instance on a random port, so
   Rust tests do not shell out to a container.
 
 One rule comes with them: **object payloads are `bytes::Bytes`, never `Vec<u8>`.**
@@ -254,7 +254,7 @@ A `to_vec()` in a hot path is a bug.
 - No `unwrap()` or `expect()` outside tests, build scripts and `main`. Model failure as
   a typed error with `thiserror` and handle it at the boundary.
 - Public items that cross a crate boundary are documented; everything else is private by
-  default. Do not make something `pub` to test it — test it from inside the module.
+  default. Do not make something `pub` to test it; test it from inside the module.
 - Name operations exactly after the S3 operation they implement: `PutObject` becomes
   `put_object`. Someone reading the AWS docs should be able to find the code by name.
 - Import groups in order: `std`, external crates, then `crate`. `rustfmt` keeps them
@@ -265,7 +265,7 @@ A `to_vec()` in a hot path is a bug.
 
 For the console, `web/` follows the same spirit as the rest of Rapture.sh: Biome decides
 formatting, named exports, no blank lines inside JSX, no `any`, label every input.
-The console is a viewer — it holds no logic the server could hold instead.
+The console is a viewer: it holds no logic the server could hold instead.
 
 ## Comments
 

@@ -41,7 +41,7 @@ pub struct ObjectMeta {
     /// content disposition, storage class, server-side encryption, checksums.
     ///
     /// Stored as a map rather than a field each, because the engine does not care what
-    /// any of them mean — which header names are worth keeping is a protocol decision,
+    /// any of them mean, which header names are worth keeping is a protocol decision,
     /// so it lives in `mock-s3-proto`.
     #[serde(default)]
     pub system_headers: BTreeMap<String, String>,

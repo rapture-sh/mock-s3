@@ -299,7 +299,7 @@ mod multipart {
     /// An upload still in flight does not block the delete.
     ///
     /// S3 conditions `DeleteBucket` on objects only, and clients delete a bucket's
-    /// objects and then the bucket without aborting uploads first — the ceph/s3-tests
+    /// objects and then the bucket without aborting uploads first, the ceph/s3-tests
     /// cleanup among them. Refusing here strands the bucket for good.
     #[tokio::test]
     async fn should_delete_a_bucket_with_an_upload_still_in_flight() {
@@ -451,7 +451,7 @@ mod multipart {
     }
 
     /// Parts are stored as objects under a reserved prefix, so a listing has to hide
-    /// them — otherwise a client sees an in-flight upload as object data.
+    /// them, otherwise a client sees an in-flight upload as object data.
     #[tokio::test]
     async fn should_hide_the_parts_of_an_in_flight_upload_from_a_listing() {
         let h = harness_with_bucket().await;

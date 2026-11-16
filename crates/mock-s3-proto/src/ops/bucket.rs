@@ -10,7 +10,7 @@ use crate::query::Query;
 use crate::xml::{ListingEcho, VersionListingEcho};
 use crate::{response, xml};
 
-/// `PUT /{bucket}` — CreateBucket.
+/// `PUT /{bucket}`: CreateBucket.
 ///
 /// The body may carry a `CreateBucketConfiguration` naming a region. mock-s3 serves one
 /// region, so it is accepted and ignored rather than rejected.
@@ -47,7 +47,7 @@ pub async fn create(
     }
 
     // Every subresource this handler covers returned early above, so reaching here with
-    // one named means it is not implemented — and treating it as CreateBucket instead
+    // one named means it is not implemented, and treating it as CreateBucket instead
     // would answer a request for something else with a success.
     crate::ops::refuse_unhandled(&query, crate::ops::BUCKET_SUBRESOURCES, &[])?;
 
@@ -67,7 +67,7 @@ pub async fn create(
     Ok(response::empty(StatusCode::OK, headers))
 }
 
-/// `DELETE /{bucket}` — DeleteBucket, or clearing a configuration.
+/// `DELETE /{bucket}`: DeleteBucket, or clearing a configuration.
 pub async fn delete(
     State(engine): State<Arc<Engine>>,
     Path(bucket): Path<String>,
@@ -108,7 +108,7 @@ pub async fn delete(
     Ok(response::empty(StatusCode::NO_CONTENT, HeaderMap::new()))
 }
 
-/// `OPTIONS /{bucket}` — a CORS preflight.
+/// `OPTIONS /{bucket}`: a CORS preflight.
 pub async fn options(
     State(engine): State<Arc<Engine>>,
     Path(bucket): Path<String>,
@@ -266,7 +266,7 @@ async fn subresource(
     Ok(Some(response::xml(StatusCode::OK, body)))
 }
 
-/// `HEAD /{bucket}` — HeadBucket.
+/// `HEAD /{bucket}`: HeadBucket.
 pub async fn head(
     State(engine): State<Arc<Engine>>,
     Path(bucket): Path<String>,
@@ -282,7 +282,7 @@ pub async fn head(
     Ok(response::empty(StatusCode::OK, headers))
 }
 
-/// `GET /{bucket}` — ListObjectsV2, ListObjects, or a bucket subresource.
+/// `GET /{bucket}`: ListObjectsV2, ListObjects, or a bucket subresource.
 pub async fn get(
     State(engine): State<Arc<Engine>>,
     Path(bucket): Path<String>,
@@ -362,7 +362,7 @@ pub async fn get(
     ))
 }
 
-/// `GET /{bucket}?versions` — ListObjectVersions.
+/// `GET /{bucket}?versions`: ListObjectVersions.
 ///
 /// Split out because a versions page resumes from a key *and* a version of that key,
 /// which neither of the object listings has to deal with.
@@ -410,7 +410,7 @@ async fn list_versions(
     ))
 }
 
-/// `POST /{bucket}` — DeleteObjects and the other bucket-level posts.
+/// `POST /{bucket}`: DeleteObjects and the other bucket-level posts.
 pub async fn post(
     State(engine): State<Arc<Engine>>,
     Path(bucket): Path<String>,

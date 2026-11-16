@@ -106,7 +106,7 @@ pub fn list(all: Vec<ObjectMeta>, request: &ListRequest) -> ListResult {
     }
 
     // `max-keys=0` is a legal request for nothing, and S3 answers it with an empty page
-    // that is *not* truncated — there is no token, because there is nothing to continue.
+    // that is *not* truncated, there is no token, because there is nothing to continue.
     // Reporting it as truncated with no token leaves a paginating client with no move.
     let is_truncated = max_keys > 0 && entries.len() > max_keys;
     let next_continuation_token = if is_truncated {
@@ -140,7 +140,7 @@ pub struct VersionListRequest {
     pub prefix: String,
     pub delimiter: Option<String>,
     pub max_keys: usize,
-    /// Resume after this key, or — with `version_id_marker` — after one version of it.
+    /// Resume after this key, or, with `version_id_marker`: after one version of it.
     pub key_marker: Option<String>,
     pub version_id_marker: Option<String>,
 }
@@ -185,7 +185,7 @@ impl VersionEntry {
         }
     }
 
-    /// `None` for a common prefix, which has no version to resume from — and that is
+    /// `None` for a common prefix, which has no version to resume from, and that is
     /// what S3 reports as the next version id marker when a page ends on one.
     fn version_id(&self) -> Option<&str> {
         match self {
@@ -215,7 +215,7 @@ pub fn list_versions(all: Vec<ObjectVersion>, request: &VersionListRequest) -> V
         match rolled_up(&version.key, &request.prefix, request.delimiter.as_deref()) {
             Some(prefix) => {
                 // Keys arrive sorted, so a group is contiguous and one comparison
-                // against the previous prefix is enough to dedupe — every version of
+                // against the previous prefix is enough to dedupe, every version of
                 // every key in the group collapses into the one entry.
                 if last_prefix.as_deref() != Some(prefix.as_str()) {
                     last_prefix = Some(prefix.clone());

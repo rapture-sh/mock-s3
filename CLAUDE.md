@@ -5,7 +5,7 @@
 Everything in `AGENTS.md` applies. The points worth repeating:
 
 - **Match real S3, or document the divergence.** Same status, same error code, same XML
-  shape, same headers. Never invent plausible-looking behaviour to make something pass —
+  shape, same headers. Never invent plausible-looking behaviour to make something pass,
   a mock that is subtly wrong makes broken code look correct.
 - **`mock-s3-core` never gains an HTTP or XML dependency.** No `axum`, no `hyper`, no
   `quick-xml` in that crate. If testing storage behaviour needs a port, the logic is in
@@ -39,7 +39,7 @@ Everything in `AGENTS.md` applies. The points worth repeating:
   container restart and can be inspected; `--in-memory` is the opt-out. Nothing about it
   is durable, and no change should imply otherwise.
 - `AGENTS.md` names some things that have no code yet, so it is the contract for new work
-  as much as a map of existing work. Do not assume a file is there because it is named —
+  as much as a map of existing work. Do not assume a file is there because it is named,
   check.
 - The console is a viewer and is optional. `--no-console` turns it off; no S3 behaviour
   may depend on it running.

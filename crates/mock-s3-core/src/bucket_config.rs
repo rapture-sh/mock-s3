@@ -5,7 +5,7 @@
 //! a bucket is configured with.
 //!
 //! The document is kept exactly as the client sent it, which is how a `GET` can return
-//! what a `PUT` put there. Anything that needs to act on a setting parses it on read —
+//! what a `PUT` put there. Anything that needs to act on a setting parses it on read,
 //! the engine does not know what a CORS rule means.
 
 use bytes::Bytes;

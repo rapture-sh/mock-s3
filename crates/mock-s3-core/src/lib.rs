@@ -2,7 +2,7 @@
 //!
 //! This crate owns buckets, objects, listings and the storage backends. It knows nothing
 //! about HTTP or XML: those live in `mock-s3-proto`, so the logic that is actually
-//! fiddly — listing pagination, key-to-path resolution — can be tested without binding
+//! fiddly, listing pagination, key-to-path resolution, can be tested without binding
 //! a port.
 
 use std::sync::Arc;
@@ -23,8 +23,8 @@ pub use model::{BucketInfo, ObjectData, ObjectMeta, PutOptions};
 pub use store::{DiskStore, MemoryStore, Store};
 pub use versioning::{DeleteOutcome, ObjectVersion, VersioningStatus};
 
-/// Keys under this prefix are mock-s3's own bookkeeping — in-flight multipart parts,
-/// object versions and bucket configuration — and never appear in a listing.
+/// Keys under this prefix are mock-s3's own bookkeeping, in-flight multipart parts,
+/// object versions and bucket configuration, and never appear in a listing.
 pub const HIDDEN_PREFIX: &str = ".mock-s3/";
 
 /// The engine every request goes through, whichever listener it arrived on.
@@ -55,7 +55,7 @@ impl Engine {
     /// Delete a bucket, which S3 only allows once it holds no objects.
     ///
     /// "No objects" means none a client can reach. A version or a delete marker counts,
-    /// because both are still there to be listed and read — emptying a versioned bucket
+    /// because both are still there to be listed and read, emptying a versioned bucket
     /// means deleting every version, which is why a client enumerates `?versions` before
     /// it tries this. Two things deliberately do not count:
     ///
@@ -63,7 +63,7 @@ impl Engine {
     ///   an empty listing and an unexplainable `BucketNotEmpty` has no way forward.
     /// - an upload still in flight. S3's own documentation lists only objects, and the
     ///   compatibility suite's cleanup deletes objects and then the bucket with no abort
-    ///   step — so blocking here would break every client that follows the same order.
+    ///   step, so blocking here would break every client that follows the same order.
     ///   The upload is discarded with the bucket.
     pub async fn delete_bucket(&self, bucket: &str) -> Result<()> {
         let stored = self.store.list_objects(bucket).await?;

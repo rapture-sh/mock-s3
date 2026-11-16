@@ -7,7 +7,7 @@
 //! multipart for free that way, and the parts are visible in the data volume like
 //! everything else.
 //!
-//! The reserved prefix is hidden from listings — see [`Engine::list_objects`] — so a
+//! The reserved prefix is hidden from listings, see [`Engine::list_objects`], so a
 //! client never sees an in-flight upload as an object.
 //!
 //! One limitation worth stating: completing an upload assembles the object in memory.
@@ -78,7 +78,7 @@ fn manifest_key(upload_id: &str) -> String {
 ///
 /// Kept after the parts are gone so that completing the same upload twice returns the
 /// same answer. `CompleteMultipartUpload` can time out on a client that then retries it,
-/// and S3 answers the retry rather than reporting the upload missing — a mock that
+/// and S3 answers the retry rather than reporting the upload missing, a mock that
 /// 404s instead turns a successful upload into a failed one.
 fn completed_key(upload_id: &str) -> String {
     format!("{}completed.json", upload_root(upload_id))

@@ -28,10 +28,10 @@ export function OverviewPage() {
       />
 
       <div className="mb-10 grid grid-cols-2 gap-6 border-border/60 border-y py-4 sm:grid-cols-4">
-        <Stat label="Buckets" value={buckets.data?.length ?? "—"} />
-        <Stat label="Objects" value={objects ?? "—"} />
-        <Stat label="Stored" value={bytes === undefined ? "—" : formatBytes(bytes)} />
-        <Stat label="Requests, last minute" value={lastMinute ?? "—"} />
+        <Stat label="Buckets" value={buckets.data?.length ?? "-"} />
+        <Stat label="Objects" value={objects ?? "-"} />
+        <Stat label="Stored" value={bytes === undefined ? "-" : formatBytes(bytes)} />
+        <Stat label="Requests, last minute" value={lastMinute ?? "-"} />
       </div>
 
       <div className="mb-3 flex items-baseline justify-between">

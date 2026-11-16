@@ -14,7 +14,7 @@ import type { RequestEntry } from "@/types/admin"
  * The status code, with weight rather than colour doing most of the work.
  *
  * Status is the only thing on this screen that gets colour at all, and only once it is
- * a problem — a wall of green 200s teaches you nothing, while a single amber 404 in a
+ * a problem, a wall of green 200s teaches you nothing, while a single amber 404 in a
  * list of them is the thing you came to find.
  */
 function Status({ status }: { status: number }) {

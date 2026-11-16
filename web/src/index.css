@@ -87,8 +87,8 @@
 }
 
 /* The console is dark only: `index.html` sets this class and nothing removes it.
-   `color-scheme` makes the browser's own chrome — scrollbars, form controls, the
-   autofill background — match, which it will not do from colours alone. */
+   `color-scheme` makes the browser's own chrome, scrollbars, form controls, the
+   autofill background, match, which it will not do from colours alone. */
 .dark {
     color-scheme: dark;
     --background: oklch(0.145 0 0);

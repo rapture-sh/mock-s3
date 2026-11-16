@@ -120,7 +120,7 @@ export function ObjectPreview({
 
   return (
     <PreviewNote>
-      No preview for {contentType}. {formatBytes(size)} — download it to open.
+      No preview for {contentType}. {formatBytes(size)}, download it to open.
     </PreviewNote>
   )
 }

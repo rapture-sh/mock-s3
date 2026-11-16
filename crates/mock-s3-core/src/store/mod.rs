@@ -11,8 +11,8 @@ pub mod memory;
 pub use disk::DiskStore;
 pub use memory::MemoryStore;
 
-/// A key ending in `/` is a legal S3 key — the AWS console creates them as folder
-/// markers — but it cannot be mirrored onto the filesystem as a file. The payload goes
+/// A key ending in `/` is a legal S3 key, the AWS console creates them as folder
+/// markers, but it cannot be mirrored onto the filesystem as a file. The payload goes
 /// in a file of this name inside the directory instead.
 pub const DIR_MARKER: &str = ".s3-dir-marker";
 

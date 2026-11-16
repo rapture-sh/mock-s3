@@ -30,7 +30,7 @@ jobs:
   rust:
     name: Rust
     # Blacksmith, because this is the job worth paying to shorten. Two vCPU because
-    # larger sizes queue without ever being picked up on the current plan — raise it
+    # larger sizes queue without ever being picked up on the current plan, raise it
     # if that changes. See release.yml for what to use in a fork without Blacksmith.
     runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:

@@ -1,8 +1,8 @@
 //! A ring buffer of recent requests, for the admin API and the console.
 //!
 //! Logs answer "what happened"; this answers "what did my SDK actually send", which is
-//! the question a mock gets asked. An SDK makes calls the caller never wrote — a
-//! `GetBucketLocation` before a listing, a switch to multipart above a threshold — and
+//! the question a mock gets asked. An SDK makes calls the caller never wrote, a
+//! `GetBucketLocation` before a listing, a switch to multipart above a threshold, and
 //! being able to read them back is the difference between debugging your code and
 //! guessing at the client library.
 //!

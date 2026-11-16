@@ -12,7 +12,7 @@ use crate::{ops, response, xml};
 
 const COPY_SOURCE: &str = "x-amz-copy-source";
 
-/// `PUT /{bucket}/{key}` — PutObject.
+/// `PUT /{bucket}/{key}`: PutObject.
 pub async fn put(
     State(engine): State<Arc<Engine>>,
     Path((bucket, key)): Path<(String, String)>,
@@ -84,7 +84,7 @@ pub async fn put(
 /// Report which version a response is about.
 ///
 /// Left off entirely in a bucket that was never versioned, because S3 sends it only when
-/// there is a version to name — a client that sees the header at all concludes the bucket
+/// there is a version to name, a client that sees the header at all concludes the bucket
 /// is versioned.
 fn set_version_id(headers: &mut HeaderMap, version_id: Option<&str>) {
     if let Some(version_id) = version_id {
@@ -96,7 +96,7 @@ fn set_version_id(headers: &mut HeaderMap, version_id: Option<&str>) {
     }
 }
 
-/// `GET /{bucket}/{key}` — GetObject, with single-range support.
+/// `GET /{bucket}/{key}`: GetObject, with single-range support.
 pub async fn get(
     State(engine): State<Arc<Engine>>,
     Path((bucket, key)): Path<(String, String)>,
@@ -188,7 +188,7 @@ pub async fn get(
     }
 }
 
-/// `HEAD /{bucket}/{key}` — HeadObject.
+/// `HEAD /{bucket}/{key}`: HeadObject.
 pub async fn head(
     State(engine): State<Arc<Engine>>,
     Path((bucket, key)): Path<(String, String)>,
@@ -220,7 +220,7 @@ pub async fn head(
     Ok(response::empty(StatusCode::OK, out))
 }
 
-/// `DELETE /{bucket}/{key}` — DeleteObject.
+/// `DELETE /{bucket}/{key}`: DeleteObject.
 pub async fn delete(
     State(engine): State<Arc<Engine>>,
     Path((bucket, key)): Path<(String, String)>,
@@ -254,7 +254,7 @@ pub async fn delete(
     Ok(response::empty(StatusCode::NO_CONTENT, out))
 }
 
-/// `POST /{bucket}/{key}` — the multipart lifecycle.
+/// `POST /{bucket}/{key}`: the multipart lifecycle.
 pub async fn post(
     State(engine): State<Arc<Engine>>,
     Path((bucket, key)): Path<(String, String)>,
@@ -352,7 +352,7 @@ async fn copy_object(
         .and_then(|value| value.to_str().ok())
         .is_some_and(|value| value.eq_ignore_ascii_case("REPLACE"));
 
-    // Copying a key onto itself only means something if the metadata is being replaced —
+    // Copying a key onto itself only means something if the metadata is being replaced,
     // otherwise it is a request to change nothing, and S3 refuses it rather than
     // rewriting the object. Allowing it hides a client bug, usually a sync that has
     // computed the wrong destination.
@@ -404,7 +404,7 @@ async fn copy_object(
         .into_response())
 }
 
-/// `OPTIONS /{bucket}/{key}` — a CORS preflight. The key plays no part: CORS is
+/// `OPTIONS /{bucket}/{key}`: a CORS preflight. The key plays no part: CORS is
 /// configured per bucket.
 pub async fn options(
     State(engine): State<Arc<Engine>>,
@@ -544,7 +544,7 @@ fn object_headers(meta: &ObjectMeta, checksums: Checksums) -> HeaderMap {
 /// Apply the `response-*` query parameters, which override the headers the object was
 /// stored with for this one response.
 ///
-/// This is how a presigned URL serves an object under a different name or content type —
+/// This is how a presigned URL serves an object under a different name or content type,
 /// the stored object is untouched. Ignoring them answers with the stored values, which
 /// looks right and silently defeats a download link's filename.
 fn apply_response_overrides(headers: &mut HeaderMap, query: &Query) {

@@ -22,7 +22,7 @@ Rules:
 - **Every test name starts with `should`**, reads as a sentence, and says the case it
   covers. Add `when` where the case needs saying. A `mod` names the thing under test and
   carries no `should`.
-- Use `testkit` to get an instance. Never a hardcoded port — tests run in parallel and a
+- Use `testkit` to get an instance. Never a hardcoded port: tests run in parallel and a
   fixed port makes them flaky.
 - Give each test its own bucket, named after the test. That is the isolation mechanism.
 - Use the in-memory backend unless the test is about disk behaviour. Disk is the runtime

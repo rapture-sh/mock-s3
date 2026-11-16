@@ -59,7 +59,7 @@ mod get_bucket_versioning {
     use super::*;
 
     /// A bucket that has never been configured reports no status at all, which is not
-    /// the same as `Suspended` — an SDK reads the empty document as `None`.
+    /// the same as `Suspended`: an SDK reads the empty document as `None`.
     #[tokio::test]
     async fn should_report_no_status_before_versioning_is_configured() {
         let h = conformance::harness().await;
@@ -153,7 +153,7 @@ mod put_object {
     }
 
     /// A suspended write stores the null version, so reporting `null` reads as the
-    /// consistent choice — a suspended *delete* does report it. Real S3 does not, and
+    /// consistent choice, a suspended *delete* does report it. Real S3 does not, and
     /// ceph/s3-tests asserts it: "for versioning-suspended-bucket, no version-id should
     /// return". This test is here so the reasoning does not win a second time.
     #[tokio::test]
@@ -449,7 +449,7 @@ mod delete_objects {
     }
 
     /// Two clients emptying a bucket at once both ask for every version, so the second
-    /// request to arrive deletes things that are already gone — and has to report
+    /// request to arrive deletes things that are already gone, and has to report
     /// success, because the outcome it asked for is exactly what happened. Repeating the
     /// same batch is the same situation without the threads.
     #[tokio::test]
@@ -971,7 +971,7 @@ mod copy_source_parsing {
 
     /// `?` is a legal character in an object key and the SDK sends it percent-encoded.
     /// Splitting the version off after decoding would read this key as `weird` at
-    /// version `x` and copy the wrong thing — or nothing.
+    /// version `x` and copy the wrong thing, or nothing.
     #[tokio::test]
     async fn should_not_mistake_a_question_mark_in_a_key_for_a_version() {
         let h = versioned().await;
@@ -1000,7 +1000,7 @@ mod on_disk {
         h.s3.create_bucket().bucket(BUCKET).send().await.unwrap();
         enable(&h, BucketVersioningStatus::Enabled).await;
 
-        // A nested key, and one ending in `/` — the two shapes that turn into something
+        // A nested key, and one ending in `/`: the two shapes that turn into something
         // other than a plain file on disk.
         for key in ["photos/2024/cat.jpg", "folder/"] {
             let first = put(&h, key, "one").await.unwrap();

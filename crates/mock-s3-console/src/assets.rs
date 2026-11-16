@@ -5,8 +5,8 @@
 //! from disk instead, so `pnpm dev` and `cargo run` can be used together without
 //! rebuilding the server to see a change.
 //!
-//! When `web/dist` holds no `index.html` — a fresh checkout where nobody has run
-//! `pnpm build` — this serves a page saying so rather than a 404, because a blank
+//! When `web/dist` holds no `index.html`: a fresh checkout where nobody has run
+//! `pnpm build`: this serves a page saying so rather than a 404, because a blank
 //! console with no explanation is the least useful failure available.
 //!
 //! The directory itself is tracked, empty, with a `.gitkeep`. `rust-embed` resolves the

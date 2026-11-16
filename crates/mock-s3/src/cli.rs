@@ -44,7 +44,7 @@ pub struct Cli {
     /// `my-bucket.<suffix>` addresses `my-bucket`.
     ///
     /// Off by default, because with it set every hostname's first label would be read as
-    /// a bucket name — including `localhost`.
+    /// a bucket name, including `localhost`.
     #[arg(long, env = "MOCK_S3_BASE_DOMAIN")]
     pub base_domain: Option<String>,
 

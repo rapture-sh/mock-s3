@@ -46,7 +46,7 @@ type NavItem = {
  * Three destinations, and nothing else.
  *
  * The bucket list used to live here too, which meant opening a bucket highlighted both
- * `Buckets` and the bucket — two selected things in one nav, for one location. The
+ * `Buckets` and the bucket, two selected things in one nav, for one location. The
  * bucket list belongs on the Buckets page, where it is the content.
  */
 const NAV: NavItem[] = [

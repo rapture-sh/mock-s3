@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Console stage. The assets are embedded into the binary by `rust-embed`, so they have to
-# exist before the Rust build runs — `web/dist` is in .dockerignore precisely so the
+# exist before the Rust build runs; `web/dist` is in .dockerignore precisely so the
 # image builds its own rather than shipping whatever happened to be on the host.
 FROM node:22-bookworm-slim AS console
 

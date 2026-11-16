@@ -49,7 +49,7 @@ mod buckets {
     }
 
     /// A subresource mock-s3 does not implement must be refused, not quietly treated as
-    /// the operation the bare path would mean — a bucket listing, or worse.
+    /// the operation the bare path would mean, a bucket listing, or worse.
     #[tokio::test]
     async fn should_refuse_a_bucket_subresource_it_does_not_implement() {
         let h = conformance::harness().await;
@@ -206,7 +206,7 @@ mod objects {
 
     /// Copying a key onto itself changes nothing unless the metadata is being replaced,
     /// and S3 refuses it rather than rewriting the object. Allowing it hides a client
-    /// bug — usually a sync that computed the wrong destination.
+    /// bug, usually a sync that computed the wrong destination.
     #[tokio::test]
     async fn should_refuse_a_copy_of_an_object_onto_itself() {
         let h = harness_with_bucket().await;
@@ -538,7 +538,7 @@ mod listing {
     }
 
     /// An empty continuation token is not an invalid one: it names no position, so the
-    /// listing starts from the beginning — and S3 echoes the parameter it was given, so
+    /// listing starts from the beginning, and S3 echoes the parameter it was given, so
     /// a client that sent one can read it back.
     #[tokio::test]
     async fn should_accept_and_echo_an_empty_continuation_token() {
@@ -764,8 +764,8 @@ mod listing {
                 .await
                 .unwrap();
 
-        // The Rust SDK does not decode for you — it hands back exactly what the wire
-        // carried, same as against real S3 — so what matters is that the request was
+        // The Rust SDK does not decode for you, it hands back exactly what the wire
+        // carried, same as against real S3, so what matters is that the request was
         // honoured and the encoding is right. `+` must come back as %2B, which is the
         // whole point: a client cannot otherwise tell it from a space.
         let keys: Vec<&str> = listed.contents().iter().filter_map(|o| o.key()).collect();

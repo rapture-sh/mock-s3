@@ -12,8 +12,8 @@ Check for:
    [S3 API reference](https://docs.aws.amazon.com/AmazonS3/latest/API/API_Operations.html).
    Look especially for: `200` where S3 returns `204`, a generic `500` where S3 has a
    named error, a missing `ETag`, wrong element nesting, and a missing or wrong XML
-   namespace. Grep for hand-formatted XML — `format!` or a string literal containing
-   `<` in a handler — because responses must go through `proto::xml`.
+   namespace. Grep for hand-formatted XML (`format!` or a string literal containing
+   `<` in a handler), because responses must go through `proto::xml`.
 2. **Error codes that were guessed.** A new variant in `error.rs` with no matching entry
    in the AWS error reference, or a code paired with the wrong status. Flag any error
    path that only a human could have invented.
@@ -22,7 +22,7 @@ Check for:
    than in the engine. Something made `pub` only so a test outside the module could
    reach it.
 4. **Global state.** A `static`, `lazy_static`, `OnceCell` or process-wide flag holding
-   anything a bucket should own — fault rules, statistics, configuration, counters. This
+   anything a bucket should own: fault rules, statistics, configuration, counters. This
    breaks isolation for parallel test suites, which is a correctness promise, not a
    nicety.
 5. **Runtime hazards.** `unwrap()` or `expect()` on a request path, any `unsafe`,

@@ -36,7 +36,7 @@
 //!
 //! The cost of having no index: finding a key's *current* version means reading the
 //! bucket's history, so a `GET` with no version id in a versioned bucket lists the
-//! bucket — on the disk backend, one sidecar read per object. A request that names a
+//! bucket, on the disk backend, one sidecar read per object. A request that names a
 //! version id does not, because the id gives the storage key directly. Resolving the
 //! current version cheaply would need a prefix listing on the
 //! [`Store`](crate::Store) trait; until something needs it, a mock sized for a test
@@ -76,7 +76,7 @@ pub enum VersioningStatus {
 }
 
 impl VersioningStatus {
-    /// The wire spelling, or an empty string for a bucket that was never configured —
+    /// The wire spelling, or an empty string for a bucket that was never configured,
     /// which is how S3 reports it, as a `VersioningConfiguration` with no `Status`.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -138,7 +138,7 @@ pub struct DeleteOutcome {
 
 /// A fresh version id: microseconds since the epoch, then a counter, in hex.
 ///
-/// Opaque to a client, as S3's are, but ordered — two writes in the same microsecond are
+/// Opaque to a client, as S3's are, but ordered, two writes in the same microsecond are
 /// still told apart, so sorting versions newest-first is deterministic rather than
 /// dependent on clock resolution.
 fn next_version_id() -> String {
@@ -161,7 +161,7 @@ fn marker_storage_key(version_id: &str, key: &str) -> String {
 ///
 /// Returns `None` for anything not under `prefix`, which is how multipart parts and
 /// configuration documents are passed over, and for a recovered key that is itself
-/// hidden — a client may legally write `.mock-s3/anything`, and a version of it must stay
+/// hidden, a client may legally write `.mock-s3/anything`, and a version of it must stay
 /// as invisible as the object would have been.
 fn split_storage_key<'key>(storage_key: &'key str, prefix: &str) -> Option<(&'key str, &'key str)> {
     let rest = storage_key.strip_prefix(prefix)?;
@@ -174,8 +174,8 @@ fn split_storage_key<'key>(storage_key: &'key str, prefix: &str) -> Option<(&'ke
 }
 
 /// Whether a storage key holds something a client can list or read: an object, one of
-/// its versions, or a delete marker. Everything else under the hidden prefix — multipart
-/// parts, configuration — is mock-s3's own bookkeeping.
+/// its versions, or a delete marker. Everything else under the hidden prefix, multipart
+/// parts, configuration, is mock-s3's own bookkeeping.
 pub(crate) fn is_client_visible(storage_key: &str) -> bool {
     split_storage_key(storage_key, VERSION_PREFIX).is_some()
         || split_storage_key(storage_key, MARKER_PREFIX).is_some()
@@ -450,7 +450,7 @@ impl Engine {
         }
     }
 
-    /// Delete one version, or — in a versioned bucket with no version id named — leave a
+    /// Delete one version, or, in a versioned bucket with no version id named, leave a
     /// delete marker behind instead of removing anything.
     pub async fn delete_object_version(
         &self,
@@ -593,7 +593,7 @@ impl Engine {
 
             // No version id, deliberately, and this one is worth not re-deriving: a
             // suspended write stores the null version, so reporting `null` reads as the
-            // consistent choice — a suspended *delete* does report it. Real S3 does not.
+            // consistent choice, a suspended *delete* does report it. Real S3 does not.
             // ceph/s3-tests asserts it outright, in both
             // `test_versioning_bucket_atomic_upload_return_version_id` and
             // `test_versioning_bucket_multipart_upload_return_version_id`:
@@ -1311,7 +1311,7 @@ mod tests {
             put(&engine, "holding", "notes.txt", "one").await;
             engine.delete_object("holding", "notes.txt").await.unwrap();
 
-            // The listing is empty, because the current version is a delete marker — but
+            // The listing is empty, because the current version is a delete marker, but
             // the bucket still holds two entries a client can list and read.
             assert!(
                 engine

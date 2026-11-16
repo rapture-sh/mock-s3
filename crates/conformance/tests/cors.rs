@@ -1,7 +1,7 @@
 //! CORS configuration through the real SDK.
 //!
 //! The preflight itself is exercised from the browser side in `tests/suites/cors.test.ts`,
-//! because an S3 SDK never sends an `OPTIONS` request — only a browser does.
+//! because an S3 SDK never sends an `OPTIONS` request, only a browser does.
 
 use aws_sdk_s3::error::ProvideErrorMetadata;
 use aws_sdk_s3::types::{CorsConfiguration, CorsRule};
@@ -106,7 +106,7 @@ async fn should_forget_the_configuration_once_deleted() {
 }
 
 /// Configuration is stored as an object under a hidden prefix, so a listing must not
-/// show it — otherwise configuring a bucket would appear to put data in it.
+/// show it, otherwise configuring a bucket would appear to put data in it.
 #[tokio::test]
 async fn should_keep_the_configuration_out_of_listings() {
     let h = harness_with_bucket().await;

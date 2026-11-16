@@ -4,7 +4,7 @@
  * This mirrors `validate_bucket_name` in `mock-s3-core/src/model.rs`, which is what
  * actually decides: the server is authoritative and will refuse a bad name whatever this
  * says. The copy exists so the modal can explain the problem before a round trip, not so
- * the check lives in two places — if the two ever disagree, the Rust one is right.
+ * the check lives in two places, if the two ever disagree, the Rust one is right.
  */
 
 const MIN = 3

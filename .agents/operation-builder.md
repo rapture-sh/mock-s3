@@ -28,23 +28,23 @@ Hard constraints:
 
 Build it in this order:
 
-1. **`crates/mock-s3-core/`** — the behaviour, as methods on the engine. Typed error
+1. **`crates/mock-s3-core/`**: the behaviour, as methods on the engine. Typed error
    variants with `thiserror`, never a panic, never a stringly-typed error. Unit tests in
    a `#[cfg(test)]` module beside the code: happy path, empty input, invalid input,
    boundaries, and a round trip where one exists.
-2. **`crates/mock-s3-proto/src/xml/`** — the request and response types. Match the real
+2. **`crates/mock-s3-proto/src/xml/`**: the request and response types. Match the real
    element names, nesting and namespace exactly. This is the most common place a mock
    diverges silently.
-3. **`crates/mock-s3-proto/src/ops/`** — the handler. Parse, call the engine, map the
+3. **`crates/mock-s3-proto/src/ops/`**: the handler. Parse, call the engine, map the
    error. No business logic; if the handler is making decisions, they belong in `core`.
-4. **`crates/mock-s3-proto/src/router.rs`** — the route. Check whether the operation is
+4. **`crates/mock-s3-proto/src/router.rs`**: the route. Check whether the operation is
    distinguished by a subresource query parameter (`?uploads`, `?versioning`,
    `?delete`), and make sure adding it has not shadowed an existing route.
-5. **`crates/mock-s3-proto/src/error.rs`** — any new error code with its HTTP status.
-6. **`crates/conformance/tests/`** — a test driving the operation through the real
+5. **`crates/mock-s3-proto/src/error.rs`**: any new error code with its HTTP status.
+6. **`crates/conformance/tests/`**: a test driving the operation through the real
    `aws-sdk-s3` client, using `testkit` for the instance and a bucket named after the
    test. Cover the success path and at least one error path.
-7. **`README.md`** — add the operation to the supported-operations table.
+7. **`README.md`**: add the operation to the supported-operations table.
 
 Then run `cargo fmt --all`, `cargo clippy --all-targets --all-features -- -D warnings`
 and `cargo test --workspace`, and fix what they report.

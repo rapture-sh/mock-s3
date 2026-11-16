@@ -8,7 +8,7 @@ use mock_s3_core::Engine;
 use crate::error::S3Error;
 use crate::{response, xml};
 
-/// `GET /` — ListBuckets.
+/// `GET /`: ListBuckets.
 pub async fn list_buckets(State(engine): State<Arc<Engine>>) -> Result<Response, S3Error> {
     let buckets = engine.list_buckets().await?;
 

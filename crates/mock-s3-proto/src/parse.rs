@@ -5,7 +5,7 @@
 //! deserialisation layer. Element names are matched on their local part, so a body that
 //! declares the S3 namespace with a prefix parses the same as one that does not.
 //!
-//! Responses are still written by hand in [`crate::xml`] — this module only reads.
+//! Responses are still written by hand in [`crate::xml`], this module only reads.
 
 use http::StatusCode;
 use mock_s3_core::VersioningStatus;
@@ -50,7 +50,7 @@ fn malformed(detail: impl std::fmt::Display) -> S3Error {
 /// Walk an XML body, handing each element's name and text to `visit`.
 ///
 /// `visit` is called with `(name, None)` when an element opens, `(name, Some(text))`
-/// when it closes, and `("/name", None)` after that — enough structure for the flat
+/// when it closes, and `("/name", None)` after that, enough structure for the flat
 /// bodies S3 accepts.
 ///
 /// **Text is never trimmed.** An object key may legitimately begin or end with a space:
@@ -59,7 +59,7 @@ fn malformed(detail: impl std::fmt::Display) -> S3Error {
 /// value; callers handling keys must not.
 ///
 /// Text is accumulated rather than reported as it arrives, because a value split across
-/// events — by an entity reference or a CDATA section — would otherwise be delivered in
+/// events, by an entity reference or a CDATA section, would otherwise be delivered in
 /// pieces and the last piece would win.
 pub(crate) fn walk(body: &[u8], mut visit: impl FnMut(&str, Option<&str>)) -> Result<(), S3Error> {
     let text = std::str::from_utf8(body).map_err(|_| malformed("the body was not UTF-8"))?;
@@ -165,7 +165,7 @@ pub fn delete_objects(body: &[u8]) -> Result<DeleteRequest, S3Error> {
 ///
 /// `MfaDelete` is parsed over and ignored: mock-s3 has no authentication, so there is no
 /// MFA to require. Real S3 rejects a document with no `Status` rather than defaulting it,
-/// and so does this — silently picking one would hide a client bug.
+/// and so does this, silently picking one would hide a client bug.
 pub fn versioning_configuration(body: &[u8]) -> Result<VersioningStatus, S3Error> {
     let mut status: Option<VersioningStatus> = None;
 

@@ -13,7 +13,7 @@ export type Query<T> = {
 type Options = {
   /** Poll this often, in milliseconds. Omit for a one-off read. */
   pollMs?: number
-  /** Skip the request entirely — for a query that depends on a route param. */
+  /** Skip the request entirely, for a query that depends on a route param. */
   enabled?: boolean
 }
 

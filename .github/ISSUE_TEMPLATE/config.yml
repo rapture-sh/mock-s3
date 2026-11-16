@@ -2,7 +2,7 @@ blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
     url: https://github.com/rapture-sh/mock-s3/security/advisories/new
-    about: Report privately, not as a public issue. Read SECURITY.md first — no auth is by design.
+    about: Report privately, not as a public issue. Read SECURITY.md first. No auth is by design.
   - name: Rapture.sh
     url: https://rapture.sh
     about: The wider project mock-s3 belongs to.

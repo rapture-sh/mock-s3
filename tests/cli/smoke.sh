@@ -3,7 +3,7 @@
 # The AWS CLI, unmodified, against a running mock-s3. This is the drop-in claim.
 #
 # The CLI runs in the official container, so nothing has to be installed, and the files
-# it reads and writes live in a Docker volume rather than a bind mount — host path
+# it reads and writes live in a Docker volume rather than a bind mount, host path
 # translation is the one thing guaranteed to behave differently on Windows.
 #
 # Usage: start mock-s3 on port 9000, then run this.

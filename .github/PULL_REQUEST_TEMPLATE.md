@@ -21,7 +21,7 @@ real S3 does and link the AWS documentation that says so. -->
 
 <!-- Delete this section if it does not. -->
 
-- [ ] Matches real S3 — same status, same error code, same XML shape, same headers — or
+- [ ] Matches real S3 (same status, same error code, same XML shape, same headers), or
       the divergence is documented in `README.md` and says why
 - [ ] A conformance test in `crates/conformance/tests/` drives it through the real
       `aws-sdk-s3` client

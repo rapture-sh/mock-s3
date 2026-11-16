@@ -2,8 +2,8 @@ use percent_encoding::percent_decode_str;
 
 /// A parsed query string.
 ///
-/// Hand-rolled because S3 uses valueless subresource parameters — `?uploads`,
-/// `?versioning`, `?location` — which most form decoders either reject or turn into
+/// Hand-rolled because S3 uses valueless subresource parameters, `?uploads`,
+/// `?versioning`, `?location`: which most form decoders either reject or turn into
 /// something awkward, and because the order of repeated keys never matters here.
 #[derive(Debug, Default)]
 pub struct Query(Vec<(String, String)>);

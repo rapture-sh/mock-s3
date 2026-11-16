@@ -24,7 +24,7 @@ body:
       label: What real S3 does
       description: >
         If this is a compatibility difference rather than a crash, say what AWS
-        returns instead. A doc link or a real observed response is ideal — it is
+        returns instead. A doc link or a real observed response is ideal, it is
         what makes the fix verifiable.
 
   - type: textarea

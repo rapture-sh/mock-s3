@@ -11,7 +11,7 @@ pub mod service;
 ///
 /// A browser sends this before the real request and refuses to continue unless the
 /// response allows the origin, method and headers it names. With no CORS configuration
-/// stored, S3 refuses — and so does this, because a mock that always allows would let a
+/// stored, S3 refuses, and so does this, because a mock that always allows would let a
 /// web app pass here and fail against AWS.
 pub(crate) async fn preflight(
     engine: &mock_s3_core::Engine,
@@ -101,8 +101,8 @@ pub(crate) fn user_metadata(headers: &HeaderMap) -> BTreeMap<String, String> {
 
 /// Read a user metadata value as text.
 ///
-/// A value may legally hold a byte above `0x7F` — `x-amz-meta-x: café` is a real thing
-/// clients send — and the old code ran it through `to_str`, which rejects those bytes, so
+/// A value may legally hold a byte above `0x7F`: `x-amz-meta-x: café` is a real thing
+/// clients send, and the old code ran it through `to_str`, which rejects those bytes, so
 /// the metadata was dropped without a word.
 ///
 /// Clients send such a value as UTF-8, and S3 answers with it as Latin-1, so metadata is
@@ -140,7 +140,7 @@ const CHECKSUM_PREFIX: &str = "x-amz-checksum-";
 ///
 /// `Content-Encoding` needs care: a streaming-signed upload arrives with `aws-chunked`
 /// in it, describing the transfer rather than the object. Real S3 strips that, and so
-/// must this — otherwise every client that downloads the object is told to un-chunk
+/// must this, otherwise every client that downloads the object is told to un-chunk
 /// bytes that were already un-chunked on the way in.
 pub(crate) fn system_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
     let mut kept = BTreeMap::new();
@@ -167,7 +167,7 @@ pub(crate) fn system_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
 
         // Removed first, then put back only if something survived. `aws-chunked` is
         // framing this server has already undone, so it must not be reported as part of
-        // the object's encoding — and when it was the *only* encoding, the loop above
+        // the object's encoding, and when it was the *only* encoding, the loop above
         // has already stored the raw value, so dropping the key is the whole fix.
         kept.remove("content-encoding");
         if !remaining.is_empty() {
