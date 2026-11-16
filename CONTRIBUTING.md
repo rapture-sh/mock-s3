@@ -184,10 +184,13 @@ The rules on this repository are kept as files rather than as clicks in a settin
 so a change to them is reviewable like anything else.
 
 [`.github/rulesets/main.json`](.github/rulesets/main.json) protects the default branch:
-pull request required, both CI checks green, linear history, no force pushes, no
-deletion, and squash as the only merge method. Zero required approvals, so a solo
-maintainer is not locked out of their own repository — raise it the day there are two of
-you.
+pull request required with one approval, both CI checks green, linear history, no force
+pushes, no deletion, and squash as the only merge method.
+
+Organization admins and anyone with the repository's admin or maintain role bypass it, so
+a maintainer can still push straight to `main` when that is the right thing to do. The
+rules are there to stop a drive-by contribution landing unreviewed, not to stop you
+working.
 
 Apply or update it with:
 
@@ -199,9 +202,13 @@ gh api -X POST repos/rapture-sh/mock-s3/rulesets --input .github/rulesets/main.j
 gh api -X PUT repos/rapture-sh/mock-s3/rulesets/<id> --input .github/rulesets/main.json
 ```
 
-**Apply it after the first push, not before.** A ruleset that requires a pull request on
-a branch that does not exist yet turns `git push -u origin main` into a rejection with a
-confusing message.
+It is applied already. The ruleset has no `creation` rule, so the first push that creates
+`main` is not blocked by it; if a later direct push is ever rejected with "Changes must be
+made through a pull request", the bypass is not matching you and the fix is one call:
+
+```bash
+gh api -X PUT repos/rapture-sh/mock-s3/rulesets/<id>   --input .github/rulesets/main.json -f enforcement=disabled
+```
 
 A second ruleset, applied already, protects `refs/tags/v*` from deletion and from being
 force-moved. Release tags are what the published image tags are derived from, so a tag

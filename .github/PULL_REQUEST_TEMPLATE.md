@@ -4,32 +4,32 @@
 
 ## Why
 
-<!-- What problem does it solve? For a fidelity fix: what does real S3 do, and
-how do you know — a doc link or an observed response. -->
+<!-- What problem does it solve? If this changes how mock-s3 answers a request, say what
+real S3 does and link the AWS documentation that says so. -->
 
 ## Checklist
 
-- [ ] Behaviour matches real S3, or the divergence is documented in the README
-- [ ] `mock-s3-core` still has no HTTP or XML dependencies
-- [ ] `cargo fmt --all --check` passes
-- [ ] `cargo clippy --all-targets --all-features -- -D warnings` passes
-- [ ] `cargo test --workspace` passes
-- [ ] New protocol surface has a conformance test driven through the real AWS SDK
-- [ ] Bug fixes have a regression test
-- [ ] Operations table in the README updated, if this adds or changes one
+- [ ] `cargo fmt --all --check`
+- [ ] `cargo clippy --all-targets --all-features -- -D warnings`
+- [ ] `cargo test --workspace`
+- [ ] Console changes also pass `pnpm lint` and `pnpm build` in `web/`
 - [ ] Commit messages are `feat: ...` or `fix: ...`, two sentences at most
+- [ ] Any new dependency is named below with a reason the standard library or an existing
+      one cannot cover it
 
-## Console changes
+## If this adds or changes protocol surface
 
-<!-- Delete if none. Screenshots required, light and dark if it differs.
-`pnpm lint` and `pnpm build` pass in web/. -->
+<!-- Delete this section if it does not. -->
+
+- [ ] Matches real S3 — same status, same error code, same XML shape, same headers — or
+      the divergence is documented in `README.md` and says why
+- [ ] A conformance test in `crates/conformance/tests/` drives it through the real
+      `aws-sdk-s3` client
+- [ ] A bug fix has a regression test that fails without the fix
+- [ ] The operations table in `README.md` is up to date
+- [ ] `mock-s3-core` gained no HTTP or XML dependency
 
 ## New dependencies
 
-<!-- None, or: the crate, what it does, why the standard library or an existing
-dependency can't, and what it costs in compile time. -->
-
-## Performance
-
-<!-- Delete unless this claims to be faster. Numbers before and after, and how
-you measured. -->
+<!-- None, or: the crate, what it does, why the standard library or a settled dependency
+cannot, and what it costs in compile time. -->
