@@ -684,7 +684,7 @@ checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
 name = "conformance"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "aws-sdk-s3",
  "mock-s3-testkit",
@@ -1608,7 +1608,7 @@ dependencies = [
 
 [[package]]
 name = "mock-s3"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -1623,7 +1623,7 @@ dependencies = [
 
 [[package]]
 name = "mock-s3-console"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "axum",
  "bytes",
@@ -1637,7 +1637,7 @@ dependencies = [
 
 [[package]]
 name = "mock-s3-core"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1654,7 +1654,7 @@ dependencies = [
 
 [[package]]
 name = "mock-s3-proto"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "axum",
  "bytes",
@@ -1670,7 +1670,7 @@ dependencies = [
 
 [[package]]
 name = "mock-s3-testkit"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "axum",
  "mock-s3-console",
@@ -2964,7 +2964,7 @@ checksum = "66fee0b777b0f5ac1c69bb06d361268faafa61cd4682ae064a171c16c433e9e4"
 
 [[package]]
 name = "xtask"
-version = "1.0.0"
+version = "1.0.1"
 
 [[package]]
 name = "yoke"

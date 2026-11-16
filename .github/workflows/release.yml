@@ -8,14 +8,14 @@ name: Release
 # the newest commit, or anyone who wrote `image: raptureoss/mock-s3` in a compose file
 # is running whatever landed on main an hour ago.
 #
-# Each architecture builds on a machine of that architecture, via Blacksmith. The
-# alternative is QEMU, which emulates an ARM CPU to run rustc. For a release build with
-# fat LTO that turns a few minutes into the better part of an hour.
+# Each architecture builds on a machine of that architecture. The alternative is QEMU,
+# which emulates an ARM CPU to run rustc. For a release build with fat LTO that turns a
+# few minutes into the better part of an hour.
 #
-# The blacksmith-* labels need the Blacksmith GitHub App installed on the repository. A
-# fork without it sees these jobs queue forever rather than fail, which is a confusing
-# way to find out: swap them for `ubuntu-latest` and `ubuntu-24.04-arm`, both of which
-# are free for public repositories and work the same way.
+# The blacksmith-* label needs the Blacksmith GitHub App installed on the repository. A
+# fork without it sees that job queue forever rather than fail, which is a confusing way
+# to find out: swap it for `ubuntu-latest`, which is free for public repositories and
+# works the same way.
 
 on:
   push:
@@ -35,7 +35,11 @@ jobs:
           - platform: linux/amd64
             runner: blacksmith-2vcpu-ubuntu-2404
           - platform: linux/arm64
-            runner: blacksmith-2vcpu-ubuntu-2404-arm
+            # GitHub's own ARM runner, not Blacksmith. The blacksmith-*-arm labels are
+            # not served on this account's plan: a job asking for one is accepted and
+            # then queues forever rather than failing, which is a slow way to find out.
+            # This one is native ARM and free for public repositories.
+            runner: ubuntu-24.04-arm
 
     steps:
       - uses: actions/checkout@v4
