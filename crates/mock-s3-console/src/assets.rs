@@ -9,10 +9,10 @@
 //! `pnpm build`: this serves a page saying so rather than a 404, because a blank
 //! console with no explanation is the least useful failure available.
 //!
-//! The directory itself is tracked, empty, with a `.gitkeep`. `rust-embed` resolves the
-//! folder when the derive expands, so a missing directory is a *compile* error, and
-//! without the placeholder the whole workspace would fail to build for anyone who had
-//! not built the console first.
+//! `rust-embed` resolves the folder when the derive expands, so a missing `web/dist` is
+//! a *compile* error rather than an empty console, and the whole workspace would fail to
+//! build for anyone who had not built the console first. `build.rs` creates the
+//! directory so that cannot happen.
 
 use axum::response::{Html, IntoResponse, Response};
 use http::{StatusCode, header};
