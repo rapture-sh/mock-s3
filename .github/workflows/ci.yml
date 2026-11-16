@@ -1,0 +1,76 @@
+name: CI
+
+# Deliberately small. Rust builds are slow and this is an early project, so CI covers
+# the checks that catch a real break and nothing else: format, lint, the test suite, and
+# whether the console still compiles.
+#
+# What is left out on purpose, and run by hand instead:
+#   - tests/            the JavaScript SDK suite, which needs a server running beside it
+#   - tests/cli/        the AWS CLI script, which pulls the amazon/aws-cli image
+#   - tests/s3-tests/   the ceph compatibility suite, ~16 minutes and a measurement
+#                       rather than a gate
+#
+# If CI starts feeling slow, delete a job rather than adding a cache.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A second push to the same branch makes the first run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the version, so rustup installs it from the checkout and
+      # this needs no version here.
+      - name: Install the pinned toolchain
+        run: rustup show
+
+      # Without this, every run recompiles the whole dependency tree.
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --all --check
+
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # Unit and conformance tests both. The conformance suite drives a real aws-sdk-s3
+      # client against an in-process instance, so it needs no services.
+      - run: cargo test --workspace
+
+  console:
+    name: Console
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+        working-directory: web
+
+      - run: pnpm lint
+        working-directory: web
+
+      - run: pnpm typecheck
+        working-directory: web
+
+      - run: pnpm build
+        working-directory: web

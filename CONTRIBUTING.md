@@ -180,37 +180,67 @@ Reviews are about the code, never the person. See
 
 ## Releasing
 
-For maintainers. Images go to `ghcr.io/rapture-sh/mock-s3` by hand; there is no release
-workflow.
-
-Authenticate with a personal access token that has the `write:packages` scope, not your
-account password:
+For maintainers. Releases are cut by pushing a tag; nothing publishes from an ordinary
+push to `main`.
 
 ```bash
-docker login ghcr.io -u <github-username>
+# 1. Bump the version in the workspace Cargo.toml, and commit it.
+#    Cargo.lock changes too, so commit both. The convention is feat:/fix: and nothing
+#    else, so a release commit is a feat:.
+cargo build --workspace
+git commit -am "feat: release 1.1.0"
+
+# 2. Tag it. The tag is what triggers the release.
+git tag v1.1.0
+git push origin main v1.1.0
 ```
 
-Then build and push, tagging both the version and `latest`:
+`.github/workflows/release.yml` then builds `linux/amd64` and `linux/arm64`, each on a
+runner of that architecture, and publishes one multi-architecture index under four tags:
 
-```bash
-cargo xtask docker
-docker tag ghcr.io/rapture-sh/mock-s3:dev ghcr.io/rapture-sh/mock-s3:1.0.0
-docker push ghcr.io/rapture-sh/mock-s3:1.0.0
-docker tag ghcr.io/rapture-sh/mock-s3:1.0.0 ghcr.io/rapture-sh/mock-s3:latest
-docker push ghcr.io/rapture-sh/mock-s3:latest
-```
+| Tag | Moves | For |
+| --- | --- | --- |
+| `1.1.0` | never | a pinned, reproducible pull |
+| `1.1` | each patch | fixes without features |
+| `1` | each minor | anything backwards-compatible |
+| `latest` | each release | trying it out |
 
-**The first push creates a private package.** An anonymous `docker pull` fails with an
-authentication error — which reads like a missing image — until the package is made
-public: open it from the repository's Packages list, then Package settings, then change
-visibility to public. It only needs doing once.
+`latest` follows releases rather than `main` on purpose. Anyone who wrote
+`image: raptureoss/mock-s3` in a compose file would otherwise be running whatever landed
+an hour ago.
 
-Keep the version in the workspace `Cargo.toml` and the image tag in step, and tag the
-commit to match:
+Images go to Docker Hub as `raptureoss/mock-s3`, and are mirrored to
+`ghcr.io/rapture-sh/mock-s3`. The mirror is not redundancy: Docker Hub rate-limits
+anonymous pulls, and this is a tool a test suite pulls on every run, so a CI user who
+starts seeing `toomanyrequests` has somewhere to go.
 
-```bash
-git tag v1.0.0 && git push origin v1.0.0
-```
+### What the workflow needs
+
+Two repository secrets, under Settings → Secrets and variables → Actions:
+
+| Secret | Value |
+| --- | --- |
+| `DOCKERHUB_USERNAME` | the Docker Hub account that owns `raptureoss` |
+| `DOCKERHUB_TOKEN` | a Docker Hub personal access token with **Read & Write** |
+
+Generate the token under Docker Hub → Account Settings → Personal access tokens. Not
+your account password, and not a token with delete permission — a release never deletes
+a tag. The token is shown once.
+
+GHCR needs no secret: the workflow uses the built-in `GITHUB_TOKEN` with `packages:
+write`.
+
+**The first GHCR push creates a private package.** An anonymous `docker pull` fails with
+an authentication error — which reads like a missing image — until it is made public:
+open it from the repository's Packages list, then Package settings, then change
+visibility. Once, ever.
+
+### Building an image by hand
+
+`cargo xtask docker` builds `raptureoss/mock-s3:dev` for the architecture you are on,
+which is what the test targets use. It is deliberately single-architecture: a
+multi-architecture image cannot be loaded into a local Docker daemon, only pushed, so
+there is nothing useful to build locally.
 
 ## Forking
 

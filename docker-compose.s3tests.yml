@@ -8,7 +8,7 @@
 services:
   mock-s3:
     build: .
-    image: ghcr.io/rapture-sh/mock-s3:dev
+    image: raptureoss/mock-s3:dev
     command: ["--in-memory"]
     expose:
       - "9000"

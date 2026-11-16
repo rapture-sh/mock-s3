@@ -51,7 +51,7 @@ body:
     attributes:
       label: mock-s3 version
       description: Image tag, or the commit you built from.
-      placeholder: ghcr.io/rapture-sh/mock-s3:latest
+      placeholder: raptureoss/mock-s3:latest
     validations:
       required: true
 

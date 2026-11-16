@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-const IMAGE: &str = "ghcr.io/rapture-sh/mock-s3";
+const IMAGE: &str = "raptureoss/mock-s3";
 
 fn main() -> ExitCode {
     let task = std::env::args().nth(1);
