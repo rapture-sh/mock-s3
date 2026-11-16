@@ -29,7 +29,9 @@ env:
 jobs:
   rust:
     name: Rust
-    runs-on: ubuntu-latest
+    # Blacksmith, because this is the job worth paying to shorten. See release.yml for
+    # what to swap it to in a fork without the Blacksmith app.
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 
@@ -51,7 +53,8 @@ jobs:
 
   console:
     name: Console
-    runs-on: ubuntu-latest
+    # A pnpm build does not need four cores.
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
 

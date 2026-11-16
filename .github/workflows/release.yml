@@ -8,9 +8,14 @@ name: Release
 # the newest commit, or anyone who wrote `image: raptureoss/mock-s3` in a compose file
 # is running whatever landed on main an hour ago.
 #
-# Each architecture builds on a machine of that architecture. The alternative is QEMU,
-# which emulates an ARM CPU to run rustc — for a release build with fat LTO that turns a
-# few minutes into the better part of an hour.
+# Each architecture builds on a machine of that architecture, via Blacksmith. The
+# alternative is QEMU, which emulates an ARM CPU to run rustc — for a release build with
+# fat LTO that turns a few minutes into the better part of an hour.
+#
+# The blacksmith-* labels need the Blacksmith GitHub App installed on the repository. A
+# fork without it sees these jobs queue forever rather than fail, which is a confusing
+# way to find out: swap them for `ubuntu-latest` and `ubuntu-24.04-arm`, both of which
+# are free for public repositories and work the same way.
 
 on:
   push:
@@ -28,12 +33,9 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            runner: ubuntu-latest
+            runner: blacksmith-4vcpu-ubuntu-2404
           - platform: linux/arm64
-            # Free for public repositories. On a private repository this label does not
-            # resolve and the job never starts — swap it for ubuntu-latest and add
-            # `docker/setup-qemu-action@v3` above the build, which is slow but works.
-            runner: ubuntu-24.04-arm
+            runner: blacksmith-4vcpu-ubuntu-2404-arm
 
     steps:
       - uses: actions/checkout@v4
@@ -107,6 +109,7 @@ jobs:
 
   publish:
     name: Publish
+    # Stitching a manifest is a few API calls, so this one stays on GitHub's free runner.
     runs-on: ubuntu-latest
     needs: [build]
     steps:

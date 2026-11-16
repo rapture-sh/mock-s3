@@ -178,6 +178,39 @@ Branches: `feat/<short-name>` or `fix/<short-name>`, cut from `main`.
 Reviews are about the code, never the person. See
 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
+## Repository settings
+
+The rules on this repository are kept as files rather than as clicks in a settings page,
+so a change to them is reviewable like anything else.
+
+[`.github/rulesets/main.json`](.github/rulesets/main.json) protects the default branch:
+pull request required, both CI checks green, linear history, no force pushes, no
+deletion, and squash as the only merge method. Zero required approvals, so a solo
+maintainer is not locked out of their own repository — raise it the day there are two of
+you.
+
+Apply or update it with:
+
+```bash
+# First time
+gh api -X POST repos/rapture-sh/mock-s3/rulesets --input .github/rulesets/main.json
+
+# Afterwards, with the id from: gh api repos/rapture-sh/mock-s3/rulesets
+gh api -X PUT repos/rapture-sh/mock-s3/rulesets/<id> --input .github/rulesets/main.json
+```
+
+**Apply it after the first push, not before.** A ruleset that requires a pull request on
+a branch that does not exist yet turns `git push -u origin main` into a rejection with a
+confusing message.
+
+A second ruleset, applied already, protects `refs/tags/v*` from deletion and from being
+force-moved. Release tags are what the published image tags are derived from, so a tag
+that can be rewritten is a version number that cannot be trusted.
+
+Squash is the only merge method on purpose: the pull request title becomes the commit
+message, which is what keeps `main` to the one-line `feat:`/`fix:` convention without
+anyone having to police it.
+
 ## Releasing
 
 For maintainers. Releases are cut by pushing a tag; nothing publishes from an ordinary
