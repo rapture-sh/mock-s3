@@ -40,7 +40,19 @@ thiserror = "2.0.11"
 # Test-only: the conformance suite drives the server with the real AWS SDK, because a
 # hand-written HTTP request only proves the handler matches our own understanding. The
 # config is built by hand, so aws-config is not needed.
-aws-sdk-s3 = "1"
+#
+# The feature list is the SDK's own default minus `rustls`, which is not the modern TLS
+# stack it sounds like: it enables the legacy hyper 0.14 client and with it rustls 0.21
+# and hyper-rustls 0.24, two unmaintained lines carrying six advisories between them.
+# `default-https-client` is the one that gives the SDK its actual HTTPS connector, and it
+# stays, so the client here is still built the way a caller's default SDK builds one.
+# Nothing is lost either way: mock-s3 speaks plain HTTP and never grows TLS.
+aws-sdk-s3 = { version = "1", default-features = false, features = [
+    "sigv4a",
+    "http-1x",
+    "default-https-client",
+    "rt-tokio",
+] }
 tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros", "fs", "io-util", "net", "signal"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
