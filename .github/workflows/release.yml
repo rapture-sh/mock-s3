@@ -55,8 +55,38 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.DOCKERHUB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=${{ matrix.platform }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+          # No cache, deliberately. A shared cache is a way for a poisoned entry to put
+          # content into a published image, and the native build is a couple of minutes
+          # anyway — the wrong trade to make on the one artifact people actually run.
+          no-cache: true
+
+      # Run the image before anything is tagged. The publish job needs this one, so a
+      # broken build cannot become `latest` and be found by whoever pulls next.
+      - name: Smoke-test the image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker run -d --name smoke -p 9000:9000 -p 9001:9001             "${DOCKERHUB_IMAGE}@${DIGEST}"
+
+          ready=0
+          for _ in $(seq 1 30); do
+            if curl -fsS http://localhost:9000/ >/dev/null 2>&1; then ready=1; break; fi
+            sleep 1
+          done
+          if [ "$ready" != 1 ]; then docker logs smoke; exit 1; fi
+
+          curl -fsS http://localhost:9001/_admin/health | grep -q '"status":"ok"'
+
+          # A round trip, not just liveness: the thing this image exists to do.
+          curl -fsS -X PUT http://localhost:9000/smoke-bucket -o /dev/null
+          printf 'hello' | curl -fsS -X PUT --data-binary @-             http://localhost:9000/smoke-bucket/key.txt -o /dev/null
+          test "$(curl -fsS http://localhost:9000/smoke-bucket/key.txt)" = "hello"
+
+          # The console is embedded, so a missing web/dist shows up here too.
+          curl -fsS http://localhost:9001/ | grep -q "<title>mock-s3</title>"
+
+          docker rm -f smoke
 
       - name: Record the digest
         env:
