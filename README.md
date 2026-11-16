@@ -6,9 +6,11 @@ enough of the S3 HTTP API that the official AWS SDKs cannot tell the difference,
 objects in a mounted volume, and ships as a single static binary in a container that
 starts in milliseconds.
 
-Written in Rust, with no JVM and no runtime dependencies. A second port serves a web
-console, baked into the binary: browse buckets and objects as folders, create and delete
-buckets, upload files, and watch the requests your client is actually sending.
+Written in Rust and linked statically against musl, so the published image is the binary
+and nothing else: no shell, no package manager, no distribution underneath, and 2 MB to
+pull. A second port serves a web console, baked into the binary: browse buckets and
+objects as folders, create and delete buckets, upload files, and watch the requests your
+client is actually sending.
 
 > **This is not a deployment target.** mock-s3 is for local development environments and
 > CI. It accepts any credentials, never verifies signatures, exposes an unauthenticated

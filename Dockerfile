@@ -23,6 +23,15 @@ RUN pnpm build
 # re-compiling the whole dependency tree.
 FROM rust:1.100-slim-bookworm AS build
 
+# musl, so the binary links nothing at runtime and the final stage can be `scratch`.
+# Against glibc it needs libc, libm and libgcc, and supplying those means shipping a
+# Debian userland: 88 packages this binary never calls, all of them accumulating CVEs
+# that are then reported against the image. Each architecture is built on a machine of
+# its own architecture, so `uname -m` names the target and nothing is cross-compiled.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends musl-tools \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /src
 
 COPY rust-toolchain.toml Cargo.toml Cargo.lock ./
@@ -33,18 +42,27 @@ COPY --from=console /web/dist ./web/dist
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
-    cargo build --release --locked --package mock-s3 \
-    && cp target/release/mock-s3 /usr/local/bin/mock-s3
+    target="$(uname -m)-unknown-linux-musl"; \
+    rustup target add "$target" \
+    && cargo build --release --locked --target "$target" --package mock-s3 \
+    && cp "target/$target/release/mock-s3" /usr/local/bin/mock-s3
 
-# Runtime stage.
-FROM debian:bookworm-slim
+# The three things `scratch` does not come with. The passwd and group entries give the
+# uid a name, and the data directory has to be created here because a volume mounted
+# over a path that does not exist is created owned by root, which the server, running
+# unprivileged, then cannot write to.
+RUN mkdir -p /rootfs/data \
+    && echo 'mock-s3:x:10001:10001::/data:/sbin/nologin' > /rootfs/passwd \
+    && echo 'mock-s3:x:10001:' > /rootfs/group
 
-# Objects land in a mounted volume, so the data directory has to be writable by the
-# unprivileged user the server runs as.
-RUN useradd --system --uid 10001 --user-group mock-s3 \
-    && mkdir -p /data \
-    && chown -R mock-s3:mock-s3 /data
+# Runtime stage. The binary and nothing else: no package manager, no shell, no shared
+# libraries, and so nothing for a scanner to find. The cost is that `docker exec` into a
+# running container is not possible; inspect the volume from the host instead.
+FROM scratch
 
+COPY --from=build /rootfs/passwd /etc/passwd
+COPY --from=build /rootfs/group /etc/group
+COPY --from=build --chown=10001:10001 /rootfs/data /data
 COPY --from=build /usr/local/bin/mock-s3 /usr/local/bin/mock-s3
 
 USER mock-s3

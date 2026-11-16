@@ -5,10 +5,11 @@ enough of the S3 HTTP API that the official AWS SDKs cannot tell the difference,
 objects in a mounted volume you can browse, and ships as a single static binary that
 starts in milliseconds.
 
-Written in Rust. No JVM, no runtime dependencies, around 30 MB. A second port serves an
-optional web console, baked into the same binary, so you can see what your code actually
-uploaded without reaching for the CLI. Turn it off with `--no-console` and the S3 API is
-unchanged.
+Written in Rust and linked statically, so the image is the binary and nothing else: no
+shell, no package manager, no distribution underneath, 2 MB to pull and nothing in it for
+a scanner to report. A second port serves an optional web console, baked into the same
+binary, so you can see what your code actually uploaded without reaching for the CLI.
+Turn it off with `--no-console` and the S3 API is unchanged.
 
 > **Not a deployment target.** mock-s3 is for development machines and CI. It accepts any
 > credentials, never verifies signatures, exposes an unauthenticated admin API, and makes
@@ -32,6 +33,14 @@ patches reach you but a new major cannot land on you by surprise.
 
 Built for `linux/amd64` and `linux/arm64`, so an Apple Silicon machine runs native code
 rather than emulation.
+
+One consequence of the image holding only the binary: there is no shell, so `docker exec`
+into a running container has nothing to run. Read the volume from the host instead, which
+works whether or not the container is up:
+
+```bash
+docker run --rm -v mock-s3-data:/d alpine find /d -type f
+```
 
 ## Pointing a client at it
 
