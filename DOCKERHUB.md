@@ -5,8 +5,10 @@ enough of the S3 HTTP API that the official AWS SDKs cannot tell the difference,
 objects in a mounted volume you can browse, and ships as a single static binary that
 starts in milliseconds.
 
-Written in Rust. No JVM, no runtime dependencies, around 30 MB. A second port serves a
-web console baked into the binary.
+Written in Rust. No JVM, no runtime dependencies, around 30 MB. A second port serves an
+optional web console, baked into the same binary, so you can see what your code actually
+uploaded without reaching for the CLI. Turn it off with `--no-console` and the S3 API is
+unchanged.
 
 > **Not a deployment target.** mock-s3 is for development machines and CI. It accepts any
 > credentials, never verifies signatures, exposes an unauthenticated admin API, and makes
@@ -23,17 +25,13 @@ S3 API on `:9000`, web console and admin API on `:9001`. Objects live in the vol
 
 For a suite that wants nothing on disk, drop the volume and add `--in-memory`.
 
-## Tags
+## Tags and architectures
 
-| Tag | Moves |
-| --- | --- |
-| `latest` | Every release |
-| `1` | Every 1.x release |
-| `1.0` | Every 1.0.x patch |
-| `1.0.1` | Never. Pin this in CI |
+`latest` tracks releases, never the main branch. In CI, pin a major such as `:1` so
+patches reach you but a new major cannot land on you by surprise.
 
 Built for `linux/amd64` and `linux/arm64`, so an Apple Silicon machine runs native code
-rather than emulation. `latest` tracks releases, never the main branch.
+rather than emulation.
 
 ## Pointing a client at it
 
