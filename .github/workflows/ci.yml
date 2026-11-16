@@ -58,7 +58,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The version comes from web/package.json. Without package_json_file the action
+      # looks in the repository root, where there is no package.json at all.
       - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
 
       - uses: actions/setup-node@v4
         with:
