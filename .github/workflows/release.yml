@@ -157,25 +157,3 @@ jobs:
             | tee /tmp/index.txt
           grep -q "linux/amd64" /tmp/index.txt
           grep -q "linux/arm64" /tmp/index.txt
-
-      # Docker Hub shows its own README on the image page, separate from the one on
-      # GitHub. Without this step it is blank, which is the first thing anyone sees.
-      #
-      # It gets DOCKERHUB.md rather than README.md. Someone arriving from a registry
-      # search wants to run the thing, not read about the project, and Docker Hub does
-      # not resolve the relative links a repository README is full of.
-      #
-      # Not allowed to fail the release. By the time it runs the image is already pushed
-      # and the index already stitched, so failing here marks a release that shipped as a
-      # failure and tells nobody anything useful. It needs a Docker Hub access token with
-      # `read/write/delete` scope: a narrower one pushes images happily and then returns
-      # `Forbidden` on this one call.
-      - name: Update the Docker Hub description
-        continue-on-error: true
-        uses: peter-evans/dockerhub-description@v5
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ env.DOCKERHUB_IMAGE }}
-          short-description: "S3-compatible object storage for local dev and CI. Starts instantly, optional web console."
-          readme-filepath: ./DOCKERHUB.md
