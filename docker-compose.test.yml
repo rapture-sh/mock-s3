@@ -8,7 +8,7 @@
 services:
   mock-s3:
     build: .
-    image: raptureoss/mock-s3:dev
+    image: rapturedotsh/mock-s3:dev
     # Overriding the command rather than setting MOCK_S3_IN_MEMORY, because a flag is
     # unambiguous where a boolean environment variable is not.
     command: ["--in-memory"]

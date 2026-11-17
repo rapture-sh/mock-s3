@@ -5,7 +5,7 @@ name: Release
 #   git tag v1.0.0 && git push origin v1.0.0
 #
 # Nothing here runs on an ordinary push: `latest` has to mean the newest release, not
-# the newest commit, or anyone who wrote `image: raptureoss/mock-s3` in a compose file
+# the newest commit, or anyone who wrote `image: rapturedotsh/mock-s3` in a compose file
 # is running whatever landed on main an hour ago.
 #
 # Each architecture builds on a machine of that architecture. The alternative is QEMU,
@@ -22,7 +22,7 @@ on:
     tags: ["v*"]
 
 env:
-  DOCKERHUB_IMAGE: raptureoss/mock-s3
+  DOCKERHUB_IMAGE: rapturedotsh/mock-s3
 
 jobs:
   build:

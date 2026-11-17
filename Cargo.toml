@@ -3,11 +3,11 @@ members = ["crates/*", "xtask"]
 resolver = "2"
 
 [workspace.package]
-version = "1.0.2"
+version = "1.0.0"
 edition = "2024"
 rust-version = "1.100"
 license = "MIT"
-repository = "https://github.com/rapture-sh/mock-s3"
+repository = "https://github.com/rapturedotsh/mock-s3"
 
 [workspace.dependencies]
 mock-s3-core = { path = "crates/mock-s3-core" }

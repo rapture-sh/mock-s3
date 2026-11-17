@@ -40,7 +40,7 @@ marker, never both.
 **The console is optional.** It is a viewer and nothing more: `--no-console` turns it off
 and the S3 API is unaffected. No S3 behaviour may ever depend on it being there.
 
-Published images go to Docker Hub as `raptureoss/mock-s3`, built for `linux/amd64` and
+Published images go to Docker Hub as `rapturedotsh/mock-s3`, built for `linux/amd64` and
 `linux/arm64` so an Apple Silicon machine gets native code rather than emulation. One
 registry, deliberately. Docker Hub rate-limits anonymous pulls, so if CI users start
 reporting `toomanyrequests`, a second registry is the answer, not a reason to add one
@@ -377,8 +377,8 @@ Rules that apply to everyone belong in this file, not in a playbook.
 
 ## Dependencies and protection
 
-Renovate owns every version update, under one policy shared by every rapture-sh repository:
-`renovate-config.json` in `rapture-sh/.github`, which `.github/renovate.json` here extends
+Renovate owns every version update, under one policy shared by every rapturedotsh repository:
+`renovate-config.json` in `rapturedotsh/.github`, which `.github/renovate.json` here extends
 and nothing else. It holds a new release for seven days before offering it, unless the
 dependency carries a published advisory, which skips the wait. Dependabot is enabled for
 alerts and security fixes only, with no `dependabot.yml`, so one bump never arrives as two

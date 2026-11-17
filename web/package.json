@@ -8,7 +8,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rapture-sh/mock-s3.git",
+    "url": "https://github.com/rapturedotsh/mock-s3.git",
     "directory": "web"
   },
   "scripts": {

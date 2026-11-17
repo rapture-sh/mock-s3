@@ -196,10 +196,10 @@ Apply or update it with:
 
 ```bash
 # First time
-gh api -X POST repos/rapture-sh/mock-s3/rulesets --input .github/rulesets/main.json
+gh api -X POST repos/rapturedotsh/mock-s3/rulesets --input .github/rulesets/main.json
 
-# Afterwards, with the id from: gh api repos/rapture-sh/mock-s3/rulesets
-gh api -X PUT repos/rapture-sh/mock-s3/rulesets/<id> --input .github/rulesets/main.json
+# Afterwards, with the id from: gh api repos/rapturedotsh/mock-s3/rulesets
+gh api -X PUT repos/rapturedotsh/mock-s3/rulesets/<id> --input .github/rulesets/main.json
 ```
 
 It is applied already. The ruleset has no `creation` rule, so the first push that creates
@@ -207,7 +207,7 @@ It is applied already. The ruleset has no `creation` rule, so the first push tha
 made through a pull request", the bypass is not matching you and the fix is one call:
 
 ```bash
-gh api -X PUT repos/rapture-sh/mock-s3/rulesets/<id>   --input .github/rulesets/main.json -f enforcement=disabled
+gh api -X PUT repos/rapturedotsh/mock-s3/rulesets/<id>   --input .github/rulesets/main.json -f enforcement=disabled
 ```
 
 A second ruleset, applied already, protects `refs/tags/v*` from deletion and from being
@@ -246,10 +246,10 @@ runner of that architecture, and publishes one multi-architecture index under fo
 | `latest` | each release | trying it out |
 
 `latest` follows releases rather than `main` on purpose. Anyone who wrote
-`image: raptureoss/mock-s3` in a compose file would otherwise be running whatever landed
+`image: rapturedotsh/mock-s3` in a compose file would otherwise be running whatever landed
 an hour ago.
 
-Images go to Docker Hub as `raptureoss/mock-s3`, and nowhere else. Docker Hub
+Images go to Docker Hub as `rapturedotsh/mock-s3`, and nowhere else. Docker Hub
 rate-limits anonymous pulls, so if CI users start reporting `toomanyrequests`, mirroring
 to a second registry is the fix, a dozen lines in the release workflow.
 
@@ -259,7 +259,7 @@ Two repository secrets, under Settings → Secrets and variables → Actions:
 
 | Secret | Value |
 | --- | --- |
-| `DOCKERHUB_USERNAME` | the Docker Hub account that owns `raptureoss` |
+| `DOCKERHUB_USERNAME` | the Docker Hub account that owns `rapturedotsh` |
 | `DOCKERHUB_TOKEN` | a Docker Hub personal access token with **Read & Write** |
 
 Generate the token under Docker Hub → Account Settings → Personal access tokens. Not
@@ -272,7 +272,7 @@ like a missing image rather than a permission problem.
 
 ### Building an image by hand
 
-`cargo xtask docker` builds `raptureoss/mock-s3:dev` for the architecture you are on,
+`cargo xtask docker` builds `rapturedotsh/mock-s3:dev` for the architecture you are on,
 which is what the test targets use. It is deliberately single-architecture: a
 multi-architecture image cannot be loaded into a local Docker daemon, only pushed, so
 there is nothing useful to build locally.

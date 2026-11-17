@@ -30,7 +30,7 @@ Images are published for `linux/amd64` and `linux/arm64`, so an Apple Silicon ma
 runs native code rather than emulation.
 
 ```bash
-docker run --rm -p 9000:9000 -p 9001:9001 -v mock-s3-data:/data raptureoss/mock-s3:latest
+docker run --rm -p 9000:9000 -p 9001:9001 -v mock-s3-data:/data rapturedotsh/mock-s3:latest
 ```
 
 S3 API on `:9000`, admin API and console on `:9001`. Objects live in the volume mounted
@@ -43,7 +43,7 @@ do is scriptable with `curl` against `/_admin`.
 ```yaml
 services:
   s3:
-    image: raptureoss/mock-s3:latest
+    image: rapturedotsh/mock-s3:latest
     ports:
       - "9000:9000"
       - "9001:9001"

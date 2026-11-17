@@ -18,7 +18,7 @@ Turn it off with `--no-console` and the S3 API is unchanged.
 ## Quick start
 
 ```bash
-docker run --rm -p 9000:9000 -p 9001:9001 -v mock-s3-data:/data raptureoss/mock-s3
+docker run --rm -p 9000:9000 -p 9001:9001 -v mock-s3-data:/data rapturedotsh/mock-s3
 ```
 
 S3 API on `:9000`, web console and admin API on `:9001`. Objects live in the volume at
@@ -72,7 +72,7 @@ The Rust, Go and Java SDKs have the same two knobs.
 ```yaml
 services:
   s3:
-    image: raptureoss/mock-s3:1
+    image: rapturedotsh/mock-s3:1
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -199,7 +199,7 @@ Out of scope entirely: IAM, replication, lifecycle transitions, storage classes 
 ## Is it compatible enough for you
 
 The honest answer is a file, not a claim.
-[`tests/s3-tests/known-failures.txt`](https://github.com/rapture-sh/mock-s3/blob/main/tests/s3-tests/known-failures.txt)
+[`tests/s3-tests/known-failures.txt`](https://github.com/rapturedotsh/mock-s3/blob/main/tests/s3-tests/known-failures.txt)
 is the exact score against [ceph/s3-tests](https://github.com/ceph/s3-tests), grouped by
 the reason each test fails.
 
@@ -212,9 +212,9 @@ start there.
 
 ## Links
 
-- Source, full README and issues: [github.com/rapture-sh/mock-s3](https://github.com/rapture-sh/mock-s3)
-- Security policy: [SECURITY.md](https://github.com/rapture-sh/mock-s3/blob/main/SECURITY.md)
-- Licence: [MIT](https://github.com/rapture-sh/mock-s3/blob/main/LICENSE)
+- Source, full README and issues: [github.com/rapturedotsh/mock-s3](https://github.com/rapturedotsh/mock-s3)
+- Security policy: [SECURITY.md](https://github.com/rapturedotsh/mock-s3/blob/main/SECURITY.md)
+- Licence: [MIT](https://github.com/rapturedotsh/mock-s3/blob/main/LICENSE)
 
 Part of [Rapture.sh](https://rapture.sh).
 
